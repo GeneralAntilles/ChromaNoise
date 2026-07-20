@@ -1,5 +1,20 @@
 # ChromaNoise iOS — Port/Reimplementation Plan
 
+## Status (2026-07-20)
+
+- **DSP math verified**: `tools/reference_dsp.py` (numpy) implements the full
+  pipeline and passes all 18 checks at machine precision. It is the golden
+  reference — Swift mirrors it.
+- **Kit scaffolded**: `Packages/ChromaNoiseKit` contains the complete DSP core,
+  clone-analysis pipeline, models, and an XCTest suite mirroring the reference
+  checks. Written on Linux, **not yet compiled** — first `swift test -c release`
+  on a Mac will shake out syntax/toolchain issues.
+- **Design simplification found during verification**: 75% OLA overlap already
+  crossfades spectral changes over ~4 hops (~85 ms), so the per-hop gain ramp
+  originally planned is unnecessary.
+- **Not started**: Xcode app target (UI, StandaloneAudioHost, services,
+  SwiftData store, file ingestion for clone).
+
 ## Context
 
 **Why**: An iOS Swift app inspired by [ChromaDoze](https://github.com/pmarks-net/chromadoze) — an Android white-noise generator whose defining feature is a multi-band slider/spectrum painter that shapes white noise in real time. This plan was researched and designed before any code; the project will be built and shipped from a Mac with Xcode.
