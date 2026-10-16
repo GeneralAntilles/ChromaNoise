@@ -32,8 +32,14 @@
   `AVAudioSourceNode`, and a one-screen UI (`UI/RootView.swift`) plays the
   built-in presets with a volume slider. CI compiles it on macOS. Covers most
   of milestones 1 + 3. See `CLAUDE.md` for the Mac workflow.
-- **Not started**: equalizer painter, SwiftData store, services (Now Playing,
-  interruptions, sleep timer), clone file ingestion.
+- **First run + equalizer painter** (2026-10-16): app runs in the iOS 27.1
+  simulator (Xcode 27.1) and the kit's 26 tests pass on macOS. Milestone 4's
+  `UI/EqualizerView.swift` paints the live phonon (line-painting across
+  skipped bands, per-band VoiceOver adjustables). Presets load normalized to
+  peak = 1 so the painter's 0 dB top matches; the kit's constant-power
+  normalization makes that inaudible.
+- **Not started**: SwiftData store, services (Now Playing, interruptions,
+  sleep timer), clone file ingestion.
 
 ## Context
 
