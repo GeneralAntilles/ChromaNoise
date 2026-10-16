@@ -24,7 +24,7 @@ public final class NoiseStream {
     public var gain: [Float]
 
     public init(seed: UInt64, fft: RealFFT? = nil) {
-        self.fft = fft ?? PureSwiftFFT(size: DSPConstants.fftSize)
+        self.fft = fft ?? makeRealFFT(size: DSPConstants.fftSize)
         precondition(self.fft.size == n)
         self.window = Windows.periodicHann(n)
         self.noise = WhiteNoise(seed: seed)
@@ -40,26 +40,66 @@ public final class NoiseStream {
     }
 
     /// Generate the next `hop` samples into `out[0..<hop]`.
+    ///
+    /// The element-wise loops run over raw buffer pointers: with Array
+    /// subscripts, bounds checks block auto-vectorization and these loops
+    /// cost more than the FFT itself. Arithmetic is unchanged.
     public func processHop(into out: inout [Float]) {
+        let n = self.n, hop = self.hop
+        precondition(out.count >= hop)
+        // `gain` is public and indexes re/im unchecked below.
+        precondition(gain.count == n / 2 + 1, "gain must have n/2+1 bins")
+
         // Slide input left by hop, append fresh noise.
-        for i in 0..<(n - hop) { input[i] = input[i + hop] }
+        input.withUnsafeMutableBufferPointer { buf in
+            let p = buf.baseAddress!
+            p.update(from: p + hop, count: n - hop)
+        }
         noise.fill(&input, count: hop, at: n - hop)
 
         // Analysis window → FFT → shape → IFFT → synthesis window.
-        for i in 0..<n { frame[i] = input[i] * window[i] }
+        Self.multiply(input, window, into: &frame)
         fft.forward(frame, re: &re, im: &im)
-        for k in 0...(n / 2) {
-            re[k] *= gain[k]
-            im[k] *= gain[k]
+        gain.withUnsafeBufferPointer { g in
+            re.withUnsafeMutableBufferPointer { r in
+                im.withUnsafeMutableBufferPointer { m in
+                    for k in 0..<r.count {
+                        r[k] *= g[k]
+                        m[k] *= g[k]
+                    }
+                }
+            }
         }
         fft.inverse(re: re, im: im, into: &synth)
-        for i in 0..<n { synth[i] *= window[i] }
 
-        // Overlap-add; emit the completed first hop, then shift the accumulator.
-        for i in 0..<n { ola[i] += synth[i] }
+        // Synthesis window + overlap-add; emit the completed first hop, then
+        // shift the accumulator.
         let norm = 1.0 / DSPConstants.colaSum
-        for i in 0..<hop { out[i] = ola[i] * norm }
-        for i in 0..<(n - hop) { ola[i] = ola[i + hop] }
-        for i in (n - hop)..<n { ola[i] = 0 }
+        synth.withUnsafeMutableBufferPointer { s in
+            window.withUnsafeBufferPointer { w in
+                ola.withUnsafeMutableBufferPointer { o in
+                    for i in 0..<n {
+                        s[i] *= w[i]
+                        o[i] += s[i]
+                    }
+                    out.withUnsafeMutableBufferPointer { dst in
+                        for i in 0..<hop { dst[i] = o[i] * norm }
+                    }
+                    let p = o.baseAddress!
+                    p.update(from: p + hop, count: n - hop)
+                    (p + (n - hop)).update(repeating: 0, count: hop)
+                }
+            }
+        }
+    }
+
+    private static func multiply(_ a: [Float], _ b: [Float], into dst: inout [Float]) {
+        a.withUnsafeBufferPointer { a in
+            b.withUnsafeBufferPointer { b in
+                dst.withUnsafeMutableBufferPointer { d in
+                    for i in 0..<d.count { d[i] = a[i] * b[i] }
+                }
+            }
+        }
     }
 }

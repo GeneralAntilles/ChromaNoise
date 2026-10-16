@@ -52,11 +52,46 @@ final class DSPTests: XCTestCase {
         }
     }
 
-    /// Unity gain through the full windowed STFT-OLA chain reconstructs the input.
+    /// The platform FFT (vDSP on Apple) must agree with the portable reference
+    /// bin for bin, including the DC and Nyquist bins vDSP packs specially.
+    func testPlatformFFTMatchesPureSwift() {
+        let n = DSPConstants.fftSize
+        let reference = PureSwiftFFT(size: n)
+        let platform = makeRealFFT(size: n)
+        var noise = WhiteNoise(seed: 99)
+        var input = [Float](repeating: 0, count: n)
+        noise.fill(&input, count: n)
+        input[0] += 3   // non-trivial DC
+        for i in 0..<n where i % 2 == 0 { input[i] += 0.5 }   // non-trivial Nyquist
+
+        var re1 = [Float](repeating: 0, count: n / 2 + 1), im1 = re1
+        var re2 = re1, im2 = re1
+        reference.forward(input, re: &re1, im: &im1)
+        platform.forward(input, re: &re2, im: &im2)
+        // Bins are O(√N · σ) ≈ 40; Float vs Double internals differ ~1e-5 relative.
+        for k in 0...(n / 2) {
+            XCTAssertEqual(re2[k], re1[k], accuracy: 2e-3, "re[\(k)]")
+            XCTAssertEqual(im2[k], im1[k], accuracy: 2e-3, "im[\(k)]")
+        }
+
+        var out1 = [Float](repeating: 0, count: n), out2 = out1
+        reference.inverse(re: re1, im: im1, into: &out1)
+        platform.inverse(re: re1, im: im1, into: &out2)
+        for i in 0..<n {
+            XCTAssertEqual(out2[i], out1[i], accuracy: 1e-5, "x[\(i)]")
+        }
+    }
+
+    /// Unity gain through the full windowed STFT-OLA chain reconstructs the
+    /// input, with both the reference and the platform FFT.
     func testIdentityReconstruction() {
+        identityReconstruction(fft: PureSwiftFFT(size: DSPConstants.fftSize))
+        identityReconstruction(fft: makeRealFFT(size: DSPConstants.fftSize))
+    }
+
+    private func identityReconstruction(fft: RealFFT) {
         let n = DSPConstants.fftSize
         let hop = DSPConstants.hop
-        let fft = PureSwiftFFT(size: n)
         let w = Windows.periodicHann(n)
         var noise = WhiteNoise(seed: 7)
         let total = 6 * n

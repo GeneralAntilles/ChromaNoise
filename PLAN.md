@@ -24,9 +24,13 @@
 - **Design simplification found during verification**: 75% OLA overlap already
   crossfades spectral changes over ~4 hops (~85 ms), so the per-hop gain ramp
   originally planned is unnecessary.
-- **CPU**: the pure-Swift FFT runs ~20× realtime for stereo on x86 — fine
-  functionally, but the < 3% CPU target will likely need the vDSP-backed
-  `RealFFT` conformance on device (the protocol seam already exists).
+- **CPU** (2026-10-16): `VDSPRealFFT` (vDSP real DFT) is the default on Apple
+  platforms via `makeRealFFT`; `PureSwiftFFT` remains for Linux and as the
+  reference it is tested against. `NoiseStream`'s element loops run over raw
+  buffer pointers (Array subscripts on class storage were costing more than
+  the FFT). Stereo synthesis on an M-series Mac: ~5× → ~1000× realtime
+  (≈0.1% of a core), output bit-identical before/after the loop rewrite.
+  `PerformanceTests` prints the factor. On-device CPU still to be measured.
 - **App bootstrapped** (2026-10-16): `project.yml` (XcodeGen) defines the
   iOS target; `Audio/StandaloneAudioHost.swift` drives the kit through an
   `AVAudioSourceNode`, and a one-screen UI (`UI/RootView.swift`) plays the
