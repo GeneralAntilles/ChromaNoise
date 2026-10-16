@@ -15,12 +15,8 @@ struct RootView: View {
                         .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
                     // Selecting loads the preset's bars; painting deselects
                     // (the phonon no longer matches any preset).
-                    Picker("Preset", selection: presetSelection) {
-                        ForEach(model.presets, id: \.name) { preset in
-                            Text(preset.name).tag(Optional(preset.name))
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    PresetBar(model: model)
+                        .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
                 }
 
                 Section("Volume") {
@@ -48,17 +44,9 @@ struct RootView: View {
             }
         }
     }
-
-    private var presetSelection: Binding<String?> {
-        Binding(
-            get: { model.selectedPresetName },
-            set: { name in
-                if let name { model.loadPreset(named: name) }
-            }
-        )
-    }
 }
 
 #Preview {
     RootView()
+        .modelContainer(for: StoredPhonon.self, inMemory: true)
 }

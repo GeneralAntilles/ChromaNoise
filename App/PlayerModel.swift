@@ -1,4 +1,5 @@
 import ChromaNoiseKit
+import Foundation
 import Observation
 
 /// Live app state. The UI binds here; every change is pushed straight into the
@@ -12,8 +13,14 @@ final class PlayerModel {
         didSet { host.apply(phonon) }
     }
 
-    /// Name of the preset the current phonon was loaded from; nil once edited.
-    private(set) var selectedPresetName: String?
+    /// Which preset the current phonon was loaded from.
+    enum PresetSelection: Hashable {
+        case builtIn(name: String)
+        case saved(id: UUID)
+    }
+
+    /// The preset the current phonon came from; nil once painted over.
+    private(set) var selection: PresetSelection?
 
     /// The current phonon's 32 band amplitudes. Setting this (the painter)
     /// edits the live phonon, so it no longer matches its preset.
@@ -21,7 +28,7 @@ final class PlayerModel {
         get { phonon.amps }
         set {
             phonon.amps = newValue
-            selectedPresetName = nil
+            selection = nil
         }
     }
 
@@ -35,9 +42,9 @@ final class PlayerModel {
     @ObservationIgnored private let host = StandaloneAudioHost()
 
     init() {
-        let initial = presets[2]   // Brown
+        let initial = presets.first { $0.name == "Brown" } ?? presets[0]
         phonon = Self.normalized(initial)
-        selectedPresetName = initial.name
+        selection = .builtIn(name: initial.name)
         host.apply(phonon)
         host.setMasterVolume(masterVolume)
         // Interruptions and route changes start/stop the host on its own;
@@ -47,10 +54,16 @@ final class PlayerModel {
         }
     }
 
-    func loadPreset(named name: String) {
-        guard let preset = presets.first(where: { $0.name == name }) else { return }
+    /// Load a sound's bars and modulation. Volume is a global setting, so a
+    /// preset's stored `masterVolume` is ignored.
+    func load(_ preset: Phonon, as selection: PresetSelection) {
         phonon = Self.normalized(preset)
-        selectedPresetName = name
+        self.selection = selection
+    }
+
+    /// The sound keeps playing; it just no longer matches a stored preset.
+    func savedPresetDeleted(id: UUID) {
+        if selection == .saved(id: id) { selection = nil }
     }
 
     func togglePlayback() {
@@ -67,7 +80,7 @@ final class PlayerModel {
         isPlaying = host.isRunning
     }
 
-    /// Presets are stored relative to band 0 (Blue peaks near 14×), but the
+    /// Built-ins are stored unnormalized (Blue peaks near 14×), but the
     /// painter's slider scale tops out at amp 1. The kit normalizes to
     /// constant power, so rescaling to peak = 1 leaves the sound unchanged.
     private static func normalized(_ preset: Phonon) -> Phonon {

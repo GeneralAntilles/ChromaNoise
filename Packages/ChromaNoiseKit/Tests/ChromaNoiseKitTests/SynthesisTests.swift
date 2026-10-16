@@ -45,6 +45,24 @@ final class SynthesisTests: XCTestCase {
         XCTAssertEqual(slope, -20.0, accuracy: 2.0)
     }
 
+    func testVioletSlope() throws {
+        let out = TestSupport.synthesize(bandAmps: Presets.violet(), seconds: 10)
+        let psd = try WelchAnalyzer.analyze(samples: out, sampleRate: TestSupport.sampleRate).psd
+        let slope = TestSupport.psdSlopeDBPerDecade(
+            psd: psd, sampleRate: TestSupport.sampleRate, fLo: 200, fHi: 10000)
+        XCTAssertEqual(slope, 20.0, accuracy: 2.0)
+    }
+
+    /// Every built-in is a valid 32-band spectrum with a unique name.
+    func testBuiltInPresetsAreWellFormed() {
+        let presets = Presets.phonons()
+        XCTAssertEqual(Set(presets.map(\.name)).count, presets.count, "duplicate preset name")
+        for p in presets {
+            XCTAssertEqual(p.amps.count, DSPConstants.bandCount, p.name)
+            XCTAssertTrue(p.amps.allSatisfy { $0.isFinite && $0 > 0 }, "\(p.name) has a non-positive or non-finite band")
+        }
+    }
+
     /// No OLA pumping: 100 ms RMS windows vary < 3 dB.
     func testStationarity() {
         let out = TestSupport.synthesize(bandAmps: Presets.white(), seconds: 10)
