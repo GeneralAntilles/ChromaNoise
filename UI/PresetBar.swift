@@ -57,6 +57,12 @@ struct PresetBar: View {
             .padding(.horizontal, 16)
         }
         .scrollIndicators(.hidden)
+        .onAppear {
+            // A restored selection may point at a sound deleted since.
+            if case .saved(let id) = model.selection, !saved.contains(where: { $0.id == id }) {
+                model.savedPresetDeleted(id: id)
+            }
+        }
         .alert("Save Sound", isPresented: $isNaming) {
             TextField("Name", text: $draftName)
             Button("Cancel", role: .cancel) {}

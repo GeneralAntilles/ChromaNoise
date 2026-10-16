@@ -10,17 +10,22 @@ final class PlayerModel {
     let presets = Presets.phonons()
 
     private(set) var phonon: Phonon {
-        didSet { host.apply(phonon) }
+        didSet {
+            host.apply(phonon)
+            publishNowPlaying()
+        }
     }
 
     /// Which preset the current phonon was loaded from.
-    enum PresetSelection: Hashable {
+    enum PresetSelection: Hashable, Codable {
         case builtIn(name: String)
         case saved(id: UUID)
     }
 
     /// The preset the current phonon came from; nil once painted over.
-    private(set) var selection: PresetSelection?
+    private(set) var selection: PresetSelection? {
+        didSet { publishNowPlaying() }
+    }
 
     /// The current phonon's 32 band amplitudes. Setting this (the painter)
     /// edits the live phonon, so it no longer matches its preset.
@@ -43,6 +48,7 @@ final class PlayerModel {
         didSet {
             guard isPlaying != oldValue else { return }
             playStartedAt = isPlaying ? .now : nil
+            publishNowPlaying()
         }
     }
     /// When the current playback started; nil while paused. The UI renders
@@ -58,11 +64,18 @@ final class PlayerModel {
     static let sleepFadeSeconds: Double = 15
 
     @ObservationIgnored private let host = StandaloneAudioHost()
+    @ObservationIgnored private var nowPlaying: NowPlayingController?
 
     init() {
-        let initial = presets.first { $0.name == "Brown" } ?? presets[0]
-        phonon = Self.normalized(initial)
-        selection = .builtIn(name: initial.name)
+        if let saved = Self.loadSavedState() {
+            phonon = saved.phonon
+            selection = saved.selection
+            masterVolume = saved.masterVolume
+        } else {
+            let initial = presets.first { $0.name == "Brown" } ?? presets[0]
+            phonon = Self.normalized(initial)
+            selection = .builtIn(name: initial.name)
+        }
         host.apply(phonon)
         applyVolume()
         // Interruptions and route changes start/stop the host on its own;
@@ -70,7 +83,14 @@ final class PlayerModel {
         host.onRunningChange = { [weak self] running in
             MainActor.assumeIsolated { self?.isPlaying = running }
         }
+        nowPlaying = NowPlayingController(
+            play: { [weak self] in self?.play() ?? false },
+            pause: { [weak self] in self?.pause(); return self != nil },
+            stop: { [weak self] in self?.stop(); return self != nil },
+            toggle: { [weak self] in self?.remoteToggle() ?? false })
+        publishNowPlaying()
     }
+
 
     /// Load a sound's bars and modulation. Volume is a global setting, so a
     /// preset's stored `masterVolume` is ignored.
@@ -147,12 +167,27 @@ final class PlayerModel {
         host.setMasterVolume(masterVolume * fadeGain)
     }
 
+    // MARK: transport
+
+    /// The on-screen button: does what its label says.
     func togglePlayback() {
-        if host.isRunning {
-            host.stop()
-            // A manual pause ends the night; interruptions don't.
-            setSleepTimer(minutes: nil)
-        } else {
+        if isPlaying { pause() } else { play() }
+    }
+
+    /// Headphone/Siri toggle: an interruption that will auto-resume counts as
+    /// playing, so a toggle mid-interruption pauses for good.
+    private func remoteToggle() -> Bool {
+        if host.isRunning || host.isAwaitingResume {
+            pause()
+            return true
+        }
+        return play()
+    }
+
+    /// Returns whether audio is now playing.
+    @discardableResult
+    func play() -> Bool {
+        if !host.isRunning {
             do {
                 try host.start()
                 errorMessage = nil
@@ -161,6 +196,56 @@ final class PlayerModel {
             }
         }
         isPlaying = host.isRunning
+        return isPlaying
+    }
+
+    /// User pause (button, lock screen, headphones). Unconditional, so it also
+    /// cancels a pending interruption resume. Also ends a sleep timer: a
+    /// manual pause ends the night; interruptions don't.
+    func pause() {
+        host.pause()
+        setSleepTimer(minutes: nil)
+        isPlaying = false
+    }
+
+    /// Remote Stop: like pause, but also releases the audio session.
+    func stop() {
+        pause()
+        host.stop()
+    }
+
+    private func publishNowPlaying() {
+        nowPlaying?.update(title: displayName, isPlaying: isPlaying)
+    }
+
+    // MARK: persistence
+
+    /// The last sound — painted or not — so the app reopens where you left
+    /// it. Saved when the app leaves the foreground; never auto-plays.
+    private struct SavedState: Codable {
+        var phonon: Phonon
+        var selection: PresetSelection?
+        var masterVolume: Float
+    }
+
+    private static let savedStateKey = "lastSound"
+
+    func saveState() {
+        let state = SavedState(phonon: phonon, selection: selection, masterVolume: masterVolume)
+        if let data = try? JSONEncoder().encode(state) {
+            UserDefaults.standard.set(data, forKey: Self.savedStateKey)
+        }
+    }
+
+    private static func loadSavedState() -> SavedState? {
+        guard let data = UserDefaults.standard.data(forKey: savedStateKey),
+              var state = try? JSONDecoder().decode(SavedState.self, from: data),
+              // Decoding bypasses Phonon's init checks; validate before use.
+              state.phonon.amps.count == DSPConstants.bandCount,
+              state.phonon.amps.allSatisfy({ $0.isFinite && $0 >= 0 })
+        else { return nil }
+        state.masterVolume = min(max(state.masterVolume, 0), 1)
+        return state
     }
 
     /// Built-ins are stored unnormalized (Blue peaks near 14×), but the

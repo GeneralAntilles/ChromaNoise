@@ -4,6 +4,7 @@ import SwiftUI
 /// Main screen: spectrum painter, presets, volume, and the now-playing bar.
 struct RootView: View {
     @State private var model = PlayerModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         NavigationStack {
@@ -33,6 +34,11 @@ struct RootView: View {
             .safeAreaInset(edge: .bottom) {
                 NowPlayingBar(model: model)
             }
+        }
+        // Leaving the foreground covers backgrounding and the app switcher
+        // (where a swipe-kill follows), so the last sound survives either.
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { model.saveState() }
         }
     }
 }

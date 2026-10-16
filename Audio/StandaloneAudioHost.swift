@@ -66,13 +66,25 @@ final class StandaloneAudioHost {
         resumeAfterInterruption = false
     }
 
-    func stop() {
+    /// User pause: stop rendering but keep the session active, so we stay
+    /// the Now Playing app and lock-screen Play keeps routing to us. Also
+    /// cancels a pending interruption resume (an explicit pause wins).
+    func pause() {
         resumeAfterInterruption = false
         guard isRunning else { return }
         stopEngine()
         isRunning = false
+    }
+
+    /// Done playing (Stop, sleep timer, headphones gone): also release the
+    /// session so other apps' audio can resume.
+    func stop() {
+        pause()
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+
+    /// Interrupted while playing, and will resume on `.shouldResume`.
+    var isAwaitingResume: Bool { resumeAfterInterruption }
 
     // MARK: parameters
 

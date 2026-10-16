@@ -62,8 +62,14 @@
   timer (5/15/30/60/90 min) via system timer texts (no app ticks; nothing
   redraws in the background). The timer fades over the last 15 s, then
   stops; a manual pause cancels it, interruptions don't.
-- **Not started**: Now Playing / lock-screen controls, clone file
-  ingestion, tremolo controls in the UI, restoring the last sound on launch.
+- **Lock screen + last-sound restore** (2026-10-16): `NowPlayingController`
+  publishes a live-stream Now Playing item and handles play/pause/stop/toggle
+  (seek/skip disabled). Pause keeps the session active (stays Now Playing);
+  Stop, sleep-timer expiry and unplug release it. The current sound (painted
+  or not), selection and volume are saved on leaving the foreground and
+  restored on launch (no auto-play). Lock screen needs a device check.
+- **Not started**: clone file ingestion, tremolo controls in the UI,
+  landscape/resizable layout (foldables), artwork for Now Playing.
 
 ## Context
 
