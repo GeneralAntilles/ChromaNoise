@@ -26,3 +26,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: swift test -c release
+
+  app:
+    name: iOS app (Simulator build)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - run: >
+          xcodebuild build
+          -project ChromaNoise.xcodeproj
+          -scheme ChromaNoise
+          -destination 'generic/platform=iOS Simulator'
+          CODE_SIGNING_ALLOWED=NO

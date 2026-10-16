@@ -1,0 +1,9 @@
+# Generated from project.yml by XcodeGen — edit project.yml instead.
+ChromaNoise.xcodeproj/
+# Xcode / SwiftPM
+xcuserdata/
+DerivedData/
+.build/
+.swiftpm/
+*.xcworkspace/xcuserdata/
+.DS_Store

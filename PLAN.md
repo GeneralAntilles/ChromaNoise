@@ -27,8 +27,13 @@
 - **CPU**: the pure-Swift FFT runs ~20× realtime for stereo on x86 — fine
   functionally, but the < 3% CPU target will likely need the vDSP-backed
   `RealFFT` conformance on device (the protocol seam already exists).
-- **Not started**: Xcode app target (UI, StandaloneAudioHost, services,
-  SwiftData store, file ingestion for clone).
+- **App bootstrapped** (2026-10-16): `project.yml` (XcodeGen) defines the
+  iOS target; `Audio/StandaloneAudioHost.swift` drives the kit through an
+  `AVAudioSourceNode`, and a one-screen UI (`UI/RootView.swift`) plays the
+  built-in presets with a volume slider. CI compiles it on macOS. Covers most
+  of milestones 1 + 3. See `CLAUDE.md` for the Mac workflow.
+- **Not started**: equalizer painter, SwiftData store, services (Now Playing,
+  interruptions, sleep timer), clone file ingestion.
 
 ## Context
 
@@ -218,7 +223,7 @@ struct Phonon: Codable, Hashable {
 ## System Integration
 
 - `Info.plist`: `UIBackgroundModes = [audio]`.
-- `AVAudioSession` category `.playback`, mode `.default`, options `[.mixWithOthers]`.
+- `AVAudioSession` category `.playback`, mode `.default`, **no** `.mixWithOthers` — a mixable session can't become the Now Playing app, so lock-screen controls would never appear. (Could be a user toggle later: "play alongside other audio" at the cost of remote controls.)
 - `MPNowPlayingInfoCenter` with `MPNowPlayingInfoPropertyIsLiveStream = true`.
 - `MPRemoteCommandCenter`: enable play/pause/togglePlayPause/stop; disable seek/skip.
 - Handle `interruptionNotification` (pause on `.began`, resume on `.ended` + `.shouldResume`) and `routeChangeNotification` (pause on `.oldDeviceUnavailable`).
