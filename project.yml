@@ -3,15 +3,15 @@
 # Edit this, not the .xcodeproj, when adding targets or settings.
 name: ChromaNoise
 options:
-  bundleIdPrefix: com.example
+  bundleIdPrefix: com.talkabel
   deploymentTarget:
     iOS: "17.2"
   createIntermediateGroups: true
 settings:
   base:
     SWIFT_VERSION: "5.0"
-    # Set your team here (or in Xcode → Signing & Capabilities) to run on device.
-    DEVELOPMENT_TEAM: ""
+    # Set here, not in Xcode's Signing UI — xcodegen overwrites the project.
+    DEVELOPMENT_TEAM: 578G67F2NQ
     CODE_SIGN_STYLE: Automatic
 packages:
   ChromaNoiseKit:
@@ -38,7 +38,7 @@ targets:
           - UIInterfaceOrientationPortrait
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.example.ChromaNoise
+        PRODUCT_BUNDLE_IDENTIFIER: com.talkabel.ChromaNoise
         TARGETED_DEVICE_FAMILY: "1"
         ENABLE_PREVIEWS: YES
 schemes:
