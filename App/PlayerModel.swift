@@ -40,6 +40,11 @@ final class PlayerModel {
         selectedPresetName = initial.name
         host.apply(phonon)
         host.setMasterVolume(masterVolume)
+        // Interruptions and route changes start/stop the host on its own;
+        // it reports them on the main queue.
+        host.onRunningChange = { [weak self] running in
+            MainActor.assumeIsolated { self?.isPlaying = running }
+        }
     }
 
     func loadPreset(named name: String) {

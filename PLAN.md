@@ -42,8 +42,13 @@
   pure-Swift FFT ran at ~⅓ realtime, so the ring underran ~15×/s (68% of
   output silent, measured with a mixer tap). The kit target now always builds
   with `-O` (`Package.swift`); 0 underruns afterwards in the simulator.
-- **Not started**: SwiftData store, services (Now Playing, interruptions,
-  sleep timer), clone file ingestion.
+- **Interruptions + route changes** (2026-10-16): `StandaloneAudioHost`
+  pauses on interruption `.began`, resumes on `.ended` + `.shouldResume`
+  only if it was playing, and pauses on `.oldDeviceUnavailable` (which also
+  cancels a pending resume). Engine start is transactional. Verified with
+  synthetic notifications in the simulator; real calls/unplugs need a device.
+- **Not started**: SwiftData store, services (Now Playing, sleep timer),
+  clone file ingestion.
 
 ## Context
 

@@ -12,21 +12,36 @@ final class StandaloneAudioHost {
     private let noise = NoiseEngine()
     private let avEngine = AVAudioEngine()
     private var sourceNode: AVAudioSourceNode?
-    private var configObserver: NSObjectProtocol?
+    private var observers: [NSObjectProtocol] = []
     private(set) var isRunning = false
+    /// Playing when an interruption began, so `.shouldResume` may restart us.
+    private var resumeAfterInterruption = false
+
+    /// Called on the main queue whenever the host starts or stops by itself
+    /// (interruption, route change, failed engine restart) — not for `start()`
+    /// / `stop()` calls, whose result the caller already knows.
+    var onRunningChange: ((Bool) -> Void)?
 
     init() {
-        configObserver = NotificationCenter.default.addObserver(
-            forName: .AVAudioEngineConfigurationChange,
-            object: avEngine,
-            queue: .main
-        ) { [weak self] _ in
-            self?.handleConfigurationChange()
-        }
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(forName: .AVAudioEngineConfigurationChange, object: avEngine,
+                               queue: .main) { [weak self] _ in
+                self?.handleConfigurationChange()
+            },
+            center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil,
+                               queue: .main) { [weak self] note in
+                self?.handleInterruption(note)
+            },
+            center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil,
+                               queue: .main) { [weak self] note in
+                self?.handleRouteChange(note)
+            },
+        ]
     }
 
     deinit {
-        if let configObserver { NotificationCenter.default.removeObserver(configObserver) }
+        observers.forEach(NotificationCenter.default.removeObserver)
         stop()
     }
 
@@ -39,11 +54,20 @@ final class StandaloneAudioHost {
         // (lock-screen controls), and keeps audio alive in the background.
         try session.setCategory(.playback, mode: .default)
         try session.setActive(true)
-        try startEngine()
+        do {
+            try startEngine()
+        } catch {
+            try? session.setActive(false, options: .notifyOthersOnDeactivation)
+            throw error
+        }
         isRunning = true
+        // Only a successful start supersedes a pending resume: pressing Play
+        // mid-interruption fails, and `.shouldResume` must still work after.
+        resumeAfterInterruption = false
     }
 
     func stop() {
+        resumeAfterInterruption = false
         guard isRunning else { return }
         stopEngine()
         isRunning = false
@@ -89,7 +113,13 @@ final class StandaloneAudioHost {
         sourceNode = node
 
         avEngine.prepare()
-        try avEngine.start()
+        do {
+            try avEngine.start()
+        } catch {
+            // Roll back so a retry doesn't attach a second node to the ring.
+            stopEngine()
+            throw error
+        }
     }
 
     private func stopEngine() {
@@ -110,7 +140,56 @@ final class StandaloneAudioHost {
             try startEngine()
         } catch {
             isRunning = false
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            onRunningChange?(false)
         }
+    }
+
+    // MARK: system events
+
+    /// Phone call, Siri, alarm…: the system has already silenced and
+    /// deactivated us at `.began`. Resume only if we were playing and the
+    /// system passes `.shouldResume` (it omits it when, e.g., another app
+    /// took over playback).
+    private func handleInterruption(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: raw)
+        else { return }
+
+        switch type {
+        case .began:
+            guard isRunning else { return }
+            stopEngine()
+            isRunning = false
+            resumeAfterInterruption = true
+            onRunningChange?(false)
+
+        case .ended:
+            let rawOptions = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+                .contains(.shouldResume)
+            guard resumeAfterInterruption else { return }
+            resumeAfterInterruption = false
+            guard shouldResume, (try? start()) != nil else { return }
+            onRunningChange?(true)
+
+        @unknown default:
+            break
+        }
+    }
+
+    /// Headphones unplugged / Bluetooth gone: pause rather than suddenly
+    /// playing out of the speaker. Never auto-resumes.
+    private func handleRouteChange(_ note: Notification) {
+        guard let raw = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              AVAudioSession.RouteChangeReason(rawValue: raw) == .oldDeviceUnavailable
+        else { return }
+        // Also cancel a pending resume: unplugging mid-interruption must not
+        // have `.shouldResume` restart us on the speaker.
+        resumeAfterInterruption = false
+        guard isRunning else { return }
+        stop()
+        onRunningChange?(false)
     }
 
     enum HostError: Error {
