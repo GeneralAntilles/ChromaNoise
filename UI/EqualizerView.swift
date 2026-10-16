@@ -12,24 +12,44 @@ struct EqualizerView: View {
     @State private var lastTouch: (band: Int, value: Float)?
 
     private static let centers = BandMath.bandCenters()
+
+    /// One hue per band, sweeping warm → cool with frequency: red at 100 Hz
+    /// to violet at 20 kHz. Saturation 0.65 keeps the darkest hue (blue) above
+    /// 3:1 contrast against the panel.
+    private static let bandColors: [Color] = (0..<DSPConstants.bandCount).map { band in
+        let t = Double(band) / Double(DSPConstants.bandCount - 1)
+        return Color(hue: 0.8 * t, saturation: 0.65, brightness: 1)
+    }
+    private static let panelColor = Color(white: 0.08)
+    private static let capHeight: CGFloat = 4
     /// VoiceOver adjust step: 1/20 of the slider = 3 dB.
     private static let accessibilityStep: Float = 0.05
 
     var body: some View {
         GeometryReader { geometry in
             Canvas { context, size in
+                // Dark panel in both color schemes: the saturated band hues
+                // need a dark backdrop to stay legible (yellows wash out on white).
+                context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 10),
+                             with: .color(Self.panelColor))
                 let slot = size.width / CGFloat(amps.count)
                 let gap = max(1, slot * 0.15)
                 for (i, amp) in amps.enumerated() {
                     let v = CGFloat(BandMath.ampToSlider(amp))
-                    let height = max(2, v * size.height)
+                    let height = max(Self.capHeight, v * size.height)
                     let rect = CGRect(x: CGFloat(i) * slot + gap / 2,
                                       y: size.height - height,
                                       width: slot - gap,
                                       height: height)
-                    context.fill(Path(roundedRect: rect, cornerRadius: 2), with: .color(.accentColor))
+                    let hue = Self.bandColors[i]
+                    context.fill(Path(rect), with: .color(hue.opacity(0.35)))
+                    // Solid cap marks the level.
+                    var cap = rect
+                    cap.size.height = Self.capHeight
+                    context.fill(Path(cap), with: .color(hue))
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
