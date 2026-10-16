@@ -35,8 +35,9 @@ final class PlayerModel {
     @ObservationIgnored private let host = StandaloneAudioHost()
 
     init() {
-        phonon = Self.normalized(presets[1])   // Pink
-        selectedPresetName = presets[1].name
+        let initial = presets[2]   // Brown
+        phonon = Self.normalized(initial)
+        selectedPresetName = initial.name
         host.apply(phonon)
         host.setMasterVolume(masterVolume)
     }

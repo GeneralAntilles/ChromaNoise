@@ -35,7 +35,6 @@ struct RootView: View {
                     }
                 }
             }
-            .navigationTitle("ChromaNoise")
             .safeAreaInset(edge: .bottom) {
                 Button(action: model.togglePlayback) {
                     Label(model.isPlaying ? "Pause" : "Play",
