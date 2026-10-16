@@ -13,7 +13,11 @@ let package = Package(
     targets: [
         .target(
             name: "ChromaNoiseKit",
-            dependencies: [.product(name: "Atomics", package: "swift-atomics")]
+            dependencies: [.product(name: "Atomics", package: "swift-atomics")],
+            // The worker's pure-Swift FFT runs ~3× too slow for realtime at
+            // -Onone, so Debug app builds underrun the ring (audible stutter).
+            // Always optimize the DSP; app code stays debuggable.
+            swiftSettings: [.unsafeFlags(["-O"], .when(configuration: .debug))]
         ),
         .testTarget(
             name: "ChromaNoiseKitTests",

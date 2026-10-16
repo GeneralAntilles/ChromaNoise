@@ -38,6 +38,10 @@
   skipped bands, per-band VoiceOver adjustables). Presets load normalized to
   peak = 1 so the painter's 0 dB top matches; the kit's constant-power
   normalization makes that inaudible.
+- **Debug builds stuttered** (found on first device run): at `-Onone` the
+  pure-Swift FFT ran at ~⅓ realtime, so the ring underran ~15×/s (68% of
+  output silent, measured with a mixer tap). The kit target now always builds
+  with `-O` (`Package.swift`); 0 underruns afterwards in the simulator.
 - **Not started**: SwiftData store, services (Now Playing, interruptions,
   sleep timer), clone file ingestion.
 
