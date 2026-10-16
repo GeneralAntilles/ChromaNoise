@@ -1,8 +1,8 @@
 import ChromaNoiseKit
 import SwiftUI
 
-/// Bootstrap screen: preset, volume, play. The 32-bar painter (EqualizerView),
-/// phonon library, and timer tabs replace this as the milestones land.
+/// Bootstrap screen: spectrum painter, preset, volume, play. The phonon
+/// library and timer tabs replace this as the milestones land.
 struct RootView: View {
     @State private var model = PlayerModel()
 
@@ -10,12 +10,14 @@ struct RootView: View {
         NavigationStack {
             Form {
                 Section {
-                    BarSpectrum(amps: model.phonon.amps)
-                        .frame(height: 160)
+                    EqualizerView(amps: $model.bandAmps)
+                        .frame(height: 220)
                         .listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
-                    Picker("Preset", selection: $model.phonon) {
+                    // Selecting loads the preset's bars; painting deselects
+                    // (the phonon no longer matches any preset).
+                    Picker("Preset", selection: presetSelection) {
                         ForEach(model.presets, id: \.name) { preset in
-                            Text(preset.name).tag(preset)
+                            Text(preset.name).tag(Optional(preset.name))
                         }
                     }
                     .pickerStyle(.segmented)
@@ -46,6 +48,15 @@ struct RootView: View {
                 .padding()
             }
         }
+    }
+
+    private var presetSelection: Binding<String?> {
+        Binding(
+            get: { model.selectedPresetName },
+            set: { name in
+                if let name { model.loadPreset(named: name) }
+            }
+        )
     }
 }
 
