@@ -57,7 +57,13 @@
   (SwiftData, JSON blob) holds user sounds; `UI/PresetBar.swift` is a
   scrolling chip row with Save, and Rename/Delete on long-press. Brown is
   the default. Loading a preset ignores its stored volume.
-- **Not started**: services (Now Playing, sleep timer), clone file ingestion.
+- **Now-playing bar + sleep timer** (2026-10-16): `UI/NowPlayingBar.swift`
+  shows the sound name ("Custom" once painted), elapsed time and a sleep
+  timer (5/15/30/60/90 min) via system timer texts (no app ticks; nothing
+  redraws in the background). The timer fades over the last 15 s, then
+  stops; a manual pause cancels it, interruptions don't.
+- **Not started**: Now Playing / lock-screen controls, clone file
+  ingestion, tremolo controls in the UI, restoring the last sound on launch.
 
 ## Context
 

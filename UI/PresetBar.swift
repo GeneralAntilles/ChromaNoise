@@ -67,7 +67,9 @@ struct PresetBar: View {
             TextField("Name", text: $draftName)
             Button("Cancel", role: .cancel) {}
             Button("Rename") {
-                renaming?.name = trimmedDraft
+                guard let stored = renaming else { return }
+                stored.name = trimmedDraft
+                model.savedPresetRenamed(id: stored.id, to: trimmedDraft)
             }
             .disabled(trimmedDraft.isEmpty)
         }
@@ -99,8 +101,10 @@ struct PresetBar: View {
 
     private func saveCurrent() {
         let name = trimmedDraft
-        guard !name.isEmpty, let stored = try? StoredPhonon(phonon: model.phonon, name: name) else { return }
+        var phonon = model.phonon
+        phonon.name = name
+        guard !name.isEmpty, let stored = try? StoredPhonon(phonon: phonon, name: name) else { return }
         context.insert(stored)
-        model.load(model.phonon, as: .saved(id: stored.id))
+        model.load(phonon, as: .saved(id: stored.id))
     }
 }

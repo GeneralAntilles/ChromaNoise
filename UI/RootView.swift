@@ -1,8 +1,7 @@
 import ChromaNoiseKit
 import SwiftUI
 
-/// Bootstrap screen: spectrum painter, preset, volume, play. The phonon
-/// library and timer tabs replace this as the milestones land.
+/// Main screen: spectrum painter, presets, volume, and the now-playing bar.
 struct RootView: View {
     @State private var model = PlayerModel()
 
@@ -32,15 +31,7 @@ struct RootView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) {
-                Button(action: model.togglePlayback) {
-                    Label(model.isPlaying ? "Pause" : "Play",
-                          systemImage: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.title2.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                }
-                .buttonStyle(.borderedProminent)
-                .padding()
+                NowPlayingBar(model: model)
             }
         }
     }
