@@ -1,5 +1,5 @@
 import Foundation
-@testable import ChromaNoiseKit
+import ChromaNoiseKit
 
 /// Shared helpers. NOTE: the synthesis tests run ~1000 pure-Swift FFTs; run
 /// `swift test -c release` — debug builds are 10–30× slower.

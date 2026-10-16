@@ -1,5 +1,5 @@
 import XCTest
-@testable import ChromaNoiseKit
+import ChromaNoiseKit
 
 final class TremoloAndRingTests: XCTestCase {
 

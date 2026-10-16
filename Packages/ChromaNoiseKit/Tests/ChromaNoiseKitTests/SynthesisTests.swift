@@ -1,5 +1,5 @@
 import XCTest
-@testable import ChromaNoiseKit
+import ChromaNoiseKit
 
 /// Mirrors tools/reference_dsp.py checks 6–9: spectral shape and stationarity
 /// of the streaming synthesis. Run with -c release; these push ~10 s of audio

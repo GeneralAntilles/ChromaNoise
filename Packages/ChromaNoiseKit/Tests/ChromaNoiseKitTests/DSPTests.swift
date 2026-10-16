@@ -1,5 +1,5 @@
 import XCTest
-@testable import ChromaNoiseKit
+import ChromaNoiseKit
 
 /// Mirrors tools/reference_dsp.py checks 1–5. Tolerances are Float-scale where
 /// the reference used Double.

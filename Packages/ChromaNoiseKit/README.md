@@ -38,7 +38,10 @@ protocol.
 - Wrap `NoiseEngine.render(left:right:frameCount:)` in an
   `AVAudioSourceNode` render block. The block must do nothing else.
 - Call `prepare(sampleRate:maxFrames:)` after the session/route is known;
-  call it again (after `teardown()`) on sample-rate or route changes.
+  call it again on sample-rate or route changes (it tears down first).
+  **Stop the AVAudioEngine before `prepare`/`teardown`** — the render path
+  reads the ring without retaining it, so it must not race a session swap.
+  `teardown()` joins the worker thread, so it returns within one hop.
 - Push UI state via `setBandGains` / `setMasterVolume` / `setTremolo` from
   any thread; the worker picks changes up at the next hop boundary and the
   75% overlap crossfades spectral changes over ~85 ms automatically.

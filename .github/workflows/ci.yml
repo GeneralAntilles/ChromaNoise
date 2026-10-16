@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  reference:
+    name: Python DSP reference
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - run: python tools/reference_dsp.py
+
+  kit:
+    name: ChromaNoiseKit (Linux)
+    runs-on: ubuntu-latest
+    container: swift:6.1-noble
+    defaults:
+      run:
+        working-directory: Packages/ChromaNoiseKit
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test -c release

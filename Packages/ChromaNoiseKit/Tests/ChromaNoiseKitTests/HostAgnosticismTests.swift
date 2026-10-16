@@ -18,7 +18,11 @@ final class HostAgnosticismTests: XCTestCase {
 
         var checked = 0
         for case let url as URL in files where url.pathExtension == "swift" {
+            // Check code only: doc comments may legitimately name the banned APIs.
             let source = try String(contentsOf: url, encoding: .utf8)
+                .split(separator: "\n", omittingEmptySubsequences: false)
+                .map { line in line.range(of: "//").map { line[..<$0.lowerBound] } ?? line }
+                .joined(separator: "\n")
             for banned in ["import AVFoundation", "import AVFAudio", "AVAudioSession"] {
                 XCTAssertFalse(source.contains(banned),
                                "\(url.lastPathComponent) contains '\(banned)' — the kit must stay host-agnostic")

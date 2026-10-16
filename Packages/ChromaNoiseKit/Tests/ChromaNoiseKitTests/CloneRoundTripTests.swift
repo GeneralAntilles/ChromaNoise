@@ -1,5 +1,5 @@
 import XCTest
-@testable import ChromaNoiseKit
+import ChromaNoiseKit
 
 /// Mirrors tools/reference_dsp.py checks 10–13: the clone pipeline analyzed
 /// against our own synthesis. Ship-blockers for the clone feature.

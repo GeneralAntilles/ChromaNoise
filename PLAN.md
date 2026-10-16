@@ -1,17 +1,32 @@
 # ChromaNoise iOS — Port/Reimplementation Plan
 
-## Status (2026-07-20)
+## Status (2026-10-16)
 
 - **DSP math verified**: `tools/reference_dsp.py` (numpy) implements the full
   pipeline and passes all 18 checks at machine precision. It is the golden
   reference — Swift mirrors it.
-- **Kit scaffolded**: `Packages/ChromaNoiseKit` contains the complete DSP core,
-  clone-analysis pipeline, models, and an XCTest suite mirroring the reference
-  checks. Written on Linux, **not yet compiled** — first `swift test -c release`
-  on a Mac will shake out syntax/toolchain issues.
+- **Kit compiles and passes**: `Packages/ChromaNoiseKit` builds with Swift 6.1
+  on Linux and all 26 tests pass under `swift test -c release` (the engine
+  threading tests are also clean under ThreadSanitizer). CI runs both the
+  Python reference and the kit tests on every push. Still unbuilt on Apple
+  platforms — expect no surprises (the kit uses only Foundation + swift-atomics).
+- **Engine lifecycle hardened** (found on first compile/review):
+  - `prepare` after `teardown` used to leave the old worker running against
+    the new ring (two producers on an SPSC ring) on every route/sample-rate
+    change; workers are now per-session and `teardown` joins them.
+  - The render path no longer retains: it reads an `Unmanaged` ring pointer.
+    Contract: the host stops rendering before `prepare`/`teardown` (same as
+    AUv3 allocate/deallocateRenderResources).
+  - The worker used to fill the whole ring (~170 ms queued at 48 kHz);
+    it now keeps `2 hops + maxFrames` queued (~53 ms with 512-frame pulls).
+    Slider-to-ear is that plus the ~85 ms OLA crossfade.
+  - Master volume, applied after overlap-add, is now ramped across each hop.
 - **Design simplification found during verification**: 75% OLA overlap already
   crossfades spectral changes over ~4 hops (~85 ms), so the per-hop gain ramp
   originally planned is unnecessary.
+- **CPU**: the pure-Swift FFT runs ~20× realtime for stereo on x86 — fine
+  functionally, but the < 3% CPU target will likely need the vDSP-backed
+  `RealFFT` conformance on device (the protocol seam already exists).
 - **Not started**: Xcode app target (UI, StandaloneAudioHost, services,
   SwiftData store, file ingestion for clone).
 
