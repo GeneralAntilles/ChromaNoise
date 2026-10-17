@@ -2,10 +2,10 @@ import ChromaNoiseKit
 import SwiftData
 import SwiftUI
 
-/// Horizontally scrolling preset chips: built-ins, then the user's saved
-/// sounds (long-press to rename or delete), then a Save chip that stores the
-/// current sound under a new name.
-struct PresetBar: View {
+/// All presets, visible at once as wrapping chip groups: the built-in
+/// categories, then the user's saved sounds (long-press to rename or
+/// delete) with a Save chip that stores the current sound under a new name.
+struct PresetPicker: View {
     let model: PlayerModel
 
     @Environment(\.modelContext) private var context
@@ -16,19 +16,25 @@ struct PresetBar: View {
     @State private var draftName = ""
 
     var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 8) {
-                ForEach(model.presets, id: \.name) { preset in
-                    chip(preset.name, selected: model.selection == .builtIn(name: preset.name)) {
-                        model.load(preset, as: .builtIn(name: preset.name))
+        VStack(alignment: .leading, spacing: 10) {
+            ForEach(model.presetGroups, id: \.name) { group in
+                section(group.name) {
+                    ForEach(group.phonons, id: \.name) { preset in
+                        chip(preset.name, selected: model.selection == .builtIn(name: preset.name)) {
+                            model.load(preset, as: .builtIn(name: preset.name))
+                        }
                     }
                 }
+            }
+            section("My Sounds") {
                 ForEach(saved) { stored in
                     chip(stored.name, selected: model.selection == .saved(id: stored.id)) {
                         if let phonon = stored.phonon {
                             model.load(phonon, as: .saved(id: stored.id))
                         }
                     }
+                    // Lift just the chip, not the whole Form row, on long-press.
+                    .contentShape(.contextMenuPreview, Capsule())
                     .contextMenu {
                         Button("Rename", systemImage: "pencil") {
                             draftName = stored.name
@@ -44,8 +50,15 @@ struct PresetBar: View {
                     draftName = ""
                     isNaming = true
                 } label: {
-                    Label("Save", systemImage: "plus")
+                    // Not Label: in a flow layout's unconstrained measure it
+                    // can pick a stacked style and drop the title.
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus")
+                        Text("Save")
+                    }
                         .font(.subheadline.weight(.medium))
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 12)
                         .padding(.vertical, 7)
                         .overlay(Capsule().strokeBorder(.tint, lineWidth: 1))
@@ -54,9 +67,8 @@ struct PresetBar: View {
                 }
                 .accessibilityLabel("Save current sound")
             }
-            .padding(.horizontal, 16)
         }
-        .scrollIndicators(.hidden)
+        .padding(.vertical, 4)
         .onAppear {
             // A restored selection may point at a sound deleted since.
             if case .saved(let id) = model.selection, !saved.contains(where: { $0.id == id }) {
@@ -81,10 +93,24 @@ struct PresetBar: View {
         }
     }
 
+    private func section<Chips: View>(_ title: String, @ViewBuilder chips: () -> Chips) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            FlowLayout(spacing: 8) {
+                chips()
+            }
+        }
+    }
+
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
                 .font(.subheadline.weight(.medium))
+                .lineLimit(1)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 7)
                 .foregroundStyle(selected ? Color.white : Color.primary)

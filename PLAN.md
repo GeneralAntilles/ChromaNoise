@@ -51,11 +51,12 @@
   only if it was playing, and pauses on `.oldDeviceUnavailable` (which also
   cancels a pending resume). Engine start is transactional. Verified with
   synthetic notifications in the simulator; real calls/unplugs need a device.
-- **Presets + saving** (2026-10-16): 10 built-ins (White, Pink, Brown, Blue,
-  Violet, Grey = inverse A-weighting, and sound-alikes Ocean [9 s tremolo],
-  Rain, Fan, Cabin — first guesses, to be tuned by ear). `StoredPhonon`
-  (SwiftData, JSON blob) holds user sounds; `UI/PresetBar.swift` is a
-  scrolling chip row with Save, and Rename/Delete on long-press. Brown is
+- **Presets + saving** (2026-10-16): 8 built-ins in two groups — Noise
+  (White, Pink, Brown, Blue) and Ambience (Ocean [9 s tremolo], Rain, Fan,
+  Cabin; first guesses, to be tuned by ear). Violet and Grey were tried and
+  dropped to keep Noise to one line. `StoredPhonon`
+  (SwiftData, JSON blob) holds user sounds; `UI/PresetPicker.swift` shows labelled,
+  wrapping chip groups (+ My Sounds with Save; Rename/Delete on long-press). Brown is
   the default. Loading a preset ignores its stored volume.
 - **Now-playing bar + sleep timer** (2026-10-16): `UI/NowPlayingBar.swift`
   shows the sound name ("Custom" once painted), elapsed time and a sleep
@@ -275,8 +276,6 @@ struct Phonon: Codable, Hashable {
 | Pink  | −3 dB/oct | `1 / sqrt(f_i / 100)` |
 | Brown | −6 dB/oct | `100 / f_i` |
 | Blue  | +3 dB/oct | `sqrt(f_i / 100)` |
-| Violet | +6 dB/oct | `f_i / 100` |
-| Grey | inverse A-weighting | `1 / R_A(f_i)` |
 
 Sound-alikes (Ocean, Rain, Fan, Cabin) are defined in dB over log2(f) in
 `Presets.swift`: base slope + Gaussian bump + extra −6 dB/oct roll-off.

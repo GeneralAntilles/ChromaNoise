@@ -41,6 +41,8 @@ struct NowPlayingBar: View {
             .buttonStyle(.borderedProminent)
         }
         .padding()
+        // Opaque-ish bar material: on short screens the Form scrolls beneath.
+        .background(.bar)
     }
 
     private var sleepTimerMenu: some View {

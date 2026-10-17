@@ -93,6 +93,9 @@ struct EqualizerView: View {
             }
         }
         .accessibilityHidden(true)   // each band already speaks its frequency
+        // Fixed log positions: larger text would collide (VoiceOver users get
+        // each band's frequency from the band itself).
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
     }
 
     /// One hue per band, sweeping warm → cool with frequency: red at 100 Hz to

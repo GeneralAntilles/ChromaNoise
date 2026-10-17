@@ -20,24 +20,6 @@ public enum Presets {
         BandMath.bandCenters().map { Float(($0 / DSPConstants.minFrequency).squareRoot()) }
     }
 
-    /// +6 dB/oct power → amp ∝ f.
-    public static func violet() -> [Float] {
-        BandMath.bandCenters().map { Float($0 / DSPConstants.minFrequency) }
-    }
-
-    /// Inverse A-weighting: roughly equal perceived loudness across the band
-    /// (boosted lows and extreme highs, where hearing is least sensitive).
-    public static func grey() -> [Float] {
-        BandMath.bandCenters().map { f in
-            let f2 = f * f
-            let ra = 12194.0 * 12194.0 * f2 * f2 / (
-                (f2 + 20.6 * 20.6)
-                    * ((f2 + 107.7 * 107.7) * (f2 + 737.9 * 737.9)).squareRoot()
-                    * (f2 + 12194.0 * 12194.0))
-            return Float(1 / ra)
-        }
-    }
-
     // Sound-alikes: a base slope plus bumps/roll-offs, in dB over log2(f).
     // Starting points tuned by reasoning, not yet by ear.
 
@@ -61,19 +43,28 @@ public enum Presets {
         shaped { f in -6 * octaves(f, 100) + bell(f, center: 400, width: 1.0, db: 5) - rolloff(above: 1500, f) }
     }
 
-    public static func phonons() -> [Phonon] {
+    /// Built-ins grouped for display. Add new presets here; `phonons()`
+    /// derives from it.
+    public static func groups() -> [PresetGroup] {
         [
-            Phonon(name: "White", amps: white()),
-            Phonon(name: "Pink", amps: pink()),
-            Phonon(name: "Brown", amps: brown()),
-            Phonon(name: "Blue", amps: blue()),
-            Phonon(name: "Violet", amps: violet()),
-            Phonon(name: "Grey", amps: grey()),
-            Phonon(name: "Ocean", amps: ocean(), tremoloPeriodSeconds: 9, tremoloDepth: 0.6),
-            Phonon(name: "Rain", amps: rain()),
-            Phonon(name: "Fan", amps: fan()),
-            Phonon(name: "Cabin", amps: cabin()),
+            PresetGroup(name: "Noise", phonons: [
+                Phonon(name: "White", amps: white()),
+                Phonon(name: "Pink", amps: pink()),
+                Phonon(name: "Brown", amps: brown()),
+                Phonon(name: "Blue", amps: blue()),
+            ]),
+            PresetGroup(name: "Ambience", phonons: [
+                Phonon(name: "Ocean", amps: ocean(), tremoloPeriodSeconds: 9, tremoloDepth: 0.6),
+                Phonon(name: "Rain", amps: rain()),
+                Phonon(name: "Fan", amps: fan()),
+                Phonon(name: "Cabin", amps: cabin()),
+            ]),
         ]
+    }
+
+    /// Every built-in, in display order.
+    public static func phonons() -> [Phonon] {
+        groups().flatMap(\.phonons)
     }
 
     // MARK: shaping helpers
@@ -97,5 +88,16 @@ public enum Presets {
 
     private static func rolloff(below corner: Double, _ f: Double) -> Double {
         max(0, 6 * octaves(corner, f))
+    }
+}
+
+/// A named set of built-in presets, e.g. "Noise" or "Ambience".
+public struct PresetGroup: Sendable {
+    public let name: String
+    public let phonons: [Phonon]
+
+    public init(name: String, phonons: [Phonon]) {
+        self.name = name
+        self.phonons = phonons
     }
 }

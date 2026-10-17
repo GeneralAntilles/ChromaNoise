@@ -7,6 +7,7 @@ import Observation
 @MainActor
 @Observable
 final class PlayerModel {
+    let presetGroups = Presets.groups()
     let presets = Presets.phonons()
 
     private(set) var phonon: Phonon {
@@ -69,7 +70,12 @@ final class PlayerModel {
     init() {
         if let saved = Self.loadSavedState() {
             phonon = saved.phonon
-            selection = saved.selection
+            // A built-in removed since (e.g. Grey, Violet) restores as Custom.
+            if case .builtIn(let name) = saved.selection, !presets.contains(where: { $0.name == name }) {
+                selection = nil
+            } else {
+                selection = saved.selection
+            }
             masterVolume = saved.masterVolume
         } else {
             let initial = presets.first { $0.name == "Brown" } ?? presets[0]
