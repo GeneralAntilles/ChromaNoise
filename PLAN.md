@@ -340,6 +340,21 @@ User picks an audio file; we analyze its long-term spectrum and save a phonon th
 - **App Intents / Siri / Shortcuts** — "start pink noise."
 - **Live Activity / Dynamic Island** sleep-timer countdown.
 - **Watch companion**; **video-with-audio import** for clone.
+- **Visualizer** (idea stage, 2026-10-16). A literal noise waveform is dull;
+  show the sound's *shape*. Steps: (1) "breathing" 32-band view of live
+  energy (moves with tremolo and the sleep fade); (2) spectral waterfall —
+  a ring-buffer texture, one row per frame, colored with the band palette —
+  as the large-screen centerpiece; (3) maybe a generative "aurora". Layout:
+  side-by-side on iPad / foldable inner display (needs the resizable-layout
+  work), full-screen ambient mode on phones. Constraints: no extra FFT — the
+  worker already has each hop's spectrum, so publish a 32-band snapshot via
+  a lock-free handoff (render-thread rule and host-agnostic kit unchanged);
+  sleep-appropriate (dim, slow, black background, capped frame rate,
+  auto-dim). Prior art to study (check licenses — clean-room):
+  barbulescualex/MetalAudioVisualizer, hotpaw2's MyMetalWaterfall gist,
+  sandner-art/Audio-Shader-Studio (MIT), Keith-43/MuVis.
+- **Resizable / landscape layout** for foldables and iPad (the app is
+  portrait-only today; see Xcode's app-resizability guidance).
 
 ---
 
