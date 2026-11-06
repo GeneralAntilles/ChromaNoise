@@ -5,53 +5,92 @@ import SwiftUI
 /// screen, so they cost nothing in the background or with the display off.
 struct NowPlayingBar: View {
     @Bindable var model: PlayerModel
+    /// Caps the bar's contents on wide windows; the material spans the width.
+    var maxContentWidth: CGFloat = .infinity
+    /// When set, the bar shows an About button (used where the navigation
+    /// bar is hidden).
+    var showAbout: (() -> Void)?
+
+    /// Landscape iPhone: a shorter bar leaves room for the controls above.
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    private var isShort: Bool { verticalSizeClass == .compact }
 
     private static let timerChoices = [5, 15, 30, 60, 90]
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: isShort ? 8 : 12) {
             HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.displayName)
-                        .font(.headline)
-                    Group {
-                        if let started = model.playStartedAt {
-                            Text("Playing \(Text(started, style: .timer))")
-                        } else {
-                            Text("Paused")
-                        }
-                    }
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                }
-                .accessibilityElement(children: .combine)
-
+                status
                 Spacer()
-
                 sleepTimerMenu
+                if let showAbout {
+                    Button(action: showAbout) {
+                        Image(systemName: "info.circle")
+                            .frame(width: 44, height: 44)   // full touch target
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("About")
+                }
             }
 
-            // Always on screen, unlike the scrolling form above.
-            Slider(value: $model.masterVolume, in: 0...1) {
-                Text("Volume")
-            } minimumValueLabel: {
-                Image(systemName: "speaker.fill").foregroundStyle(.secondary)
-            } maximumValueLabel: {
-                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+            if isShort {
+                // Landscape iPhone: transport and volume share a row.
+                HStack(spacing: 16) {
+                    playButton
+                        .fixedSize()
+                    volumeSlider
+                }
+            } else {
+                volumeSlider
+                playButton
             }
-
-            Button(action: model.togglePlayback) {
-                Label(model.isPlaying ? "Pause" : "Play",
-                      systemImage: model.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.title2.weight(.semibold))
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
         }
-        .padding()
+        .frame(maxWidth: maxContentWidth)
+        .padding(isShort ? 12 : 16)
+        .frame(maxWidth: .infinity)
         // Opaque-ish bar material: on short screens the Form scrolls beneath.
         .background(.bar)
+    }
+
+    private var status: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(model.displayName)
+                .font(.headline)
+                .lineLimit(1)
+            Group {
+                if let started = model.playStartedAt {
+                    Text("Playing \(Text(started, style: .timer))")
+                } else {
+                    Text("Paused")
+                }
+            }
+            .font(.subheadline.monospacedDigit())
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    // Always on screen, unlike the scrolling form above.
+    private var volumeSlider: some View {
+        Slider(value: $model.masterVolume, in: 0...1) {
+            Text("Volume")
+        } minimumValueLabel: {
+            Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+        } maximumValueLabel: {
+            Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
+        }
+    }
+
+    private var playButton: some View {
+        Button(action: model.togglePlayback) {
+            Label(model.isPlaying ? "Pause" : "Play",
+                  systemImage: model.isPlaying ? "pause.fill" : "play.fill")
+                .font(isShort ? .headline : .title2.weight(.semibold))
+                .frame(maxWidth: isShort ? nil : .infinity)
+                .frame(minWidth: isShort ? 120 : nil)
+                .padding(.vertical, isShort ? 4 : 8)
+        }
+        .buttonStyle(.borderedProminent)
     }
 
     private var sleepTimerMenu: some View {

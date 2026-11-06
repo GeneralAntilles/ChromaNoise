@@ -353,8 +353,9 @@ User picks an audio file; we analyze its long-term spectrum and save a phonon th
   auto-dim). Prior art to study (check licenses — clean-room):
   barbulescualex/MetalAudioVisualizer, hotpaw2's MyMetalWaterfall gist,
   sandner-art/Audio-Shader-Studio (MIT), Keith-43/MuVis.
-- **Resizable / landscape layout** for foldables and iPad (the app is
-  portrait-only today; see Xcode's app-resizability guidance).
+- **Resizable / landscape layout** — shipped in 1.0 (iPhone landscape,
+  iPad all orientations). Still to check by hand: Stage Manager / Split
+  View window resizing, which the simulator tooling can't drive.
 
 ---
 
