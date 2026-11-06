@@ -4,9 +4,9 @@ import SwiftUI
 struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
 
-    /// Hosted pages for App Store review; rows are hidden while nil.
-    private static let privacyPolicyURL: URL? = nil
-    private static let supportURL: URL? = nil
+    /// Served by GitHub Pages from this repo's docs/ folder.
+    private static let privacyPolicyURL = URL(string: "https://generalantilles.github.io/ChromaNoise/privacy/")
+    private static let supportURL = URL(string: "https://generalantilles.github.io/ChromaNoise/support/")
     private static let sourceURL = URL(string: "https://github.com/GeneralAntilles/ChromaNoise")
     private static let chromaDozeURL = URL(string: "https://github.com/pmarks-net/chromadoze")
 
@@ -53,7 +53,7 @@ struct AboutView: View {
                         Link("Support", destination: url)
                     }
                     if let url = Self.sourceURL {
-                        Link("Source Code", destination: url)
+                        Link("Source Code (MIT License)", destination: url)
                     }
                 }
             }
