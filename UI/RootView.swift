@@ -1,9 +1,11 @@
 import ChromaNoiseKit
 import SwiftUI
 
-/// Main screen: spectrum painter, presets, volume, and the now-playing bar.
+/// Main screen: spectrum painter, presets, swell, and the now-playing bar
+/// (which holds volume and transport).
 struct RootView: View {
     @State private var model = PlayerModel()
+    @State private var showingAbout = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
@@ -21,10 +23,12 @@ struct RootView: View {
                     PresetPicker(model: model)
                 }
 
-                Section("Volume") {
-                    Slider(value: $model.masterVolume, in: 0...1) {
-                        Text("Master volume")
-                    }
+                Section {
+                    SwellControls(model: model)
+                } header: {
+                    Text("Swell")
+                } footer: {
+                    Text("Slowly raises and lowers the volume, like waves.")
                 }
 
                 if let error = model.errorMessage {
@@ -35,6 +39,14 @@ struct RootView: View {
             }
             .safeAreaInset(edge: .bottom) {
                 NowPlayingBar(model: model)
+            }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("About", systemImage: "info.circle") { showingAbout = true }
+                }
+            }
+            .sheet(isPresented: $showingAbout) {
+                AboutView()
             }
         }
         // Leaving the foreground covers backgrounding and the app switcher

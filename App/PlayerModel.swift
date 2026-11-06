@@ -38,6 +38,29 @@ final class PlayerModel {
         }
     }
 
+    /// Swell (tremolo) depth, 0 = off. Like painting, editing it means the
+    /// sound no longer matches its preset.
+    var tremoloDepth: Float {
+        get { phonon.tremoloDepth }
+        set {
+            // Presets without swell carry the kit's 1 s default period, a
+            // fast pulse. Turning swell on from off starts at a slow wave.
+            if phonon.tremoloDepth < 0.001, newValue >= 0.001, phonon.tremoloPeriodSeconds < 2 {
+                phonon.tremoloPeriodSeconds = 8
+            }
+            phonon.tremoloDepth = newValue
+            selection = nil
+        }
+    }
+
+    var tremoloPeriodSeconds: Float {
+        get { phonon.tremoloPeriodSeconds }
+        set {
+            phonon.tremoloPeriodSeconds = newValue
+            selection = nil
+        }
+    }
+
     var masterVolume: Float = 0.7 {
         didSet { applyVolume() }
     }

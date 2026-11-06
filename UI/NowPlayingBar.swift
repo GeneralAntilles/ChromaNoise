@@ -4,7 +4,7 @@ import SwiftUI
 /// The clocks are system timer texts — SwiftUI updates them only while on
 /// screen, so they cost nothing in the background or with the display off.
 struct NowPlayingBar: View {
-    let model: PlayerModel
+    @Bindable var model: PlayerModel
 
     private static let timerChoices = [5, 15, 30, 60, 90]
 
@@ -29,6 +29,15 @@ struct NowPlayingBar: View {
                 Spacer()
 
                 sleepTimerMenu
+            }
+
+            // Always on screen, unlike the scrolling form above.
+            Slider(value: $model.masterVolume, in: 0...1) {
+                Text("Volume")
+            } minimumValueLabel: {
+                Image(systemName: "speaker.fill").foregroundStyle(.secondary)
+            } maximumValueLabel: {
+                Image(systemName: "speaker.wave.3.fill").foregroundStyle(.secondary)
             }
 
             Button(action: model.togglePlayback) {
