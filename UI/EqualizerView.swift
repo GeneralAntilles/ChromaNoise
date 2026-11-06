@@ -14,7 +14,7 @@ struct EqualizerView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     private static let centers = BandMath.bandCenters()
-    private static let darkColors = bandPalette(forDarkBackground: true)
+    static let darkColors = bandPalette(forDarkBackground: true)
     private static let lightColors = bandPalette(forDarkBackground: false)
     private static let capHeight: CGFloat = 4
     /// Axis ticks; bands are log-spaced, so x ∝ log(f / 100 Hz).

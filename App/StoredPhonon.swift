@@ -26,3 +26,15 @@ final class StoredPhonon {
         return p
     }
 }
+
+extension StoredPhonon {
+    /// The app's one store, shared by the UI and App Intents (which can run
+    /// without any view on screen).
+    @MainActor static let container: ModelContainer = {
+        do {
+            return try ModelContainer(for: StoredPhonon.self)
+        } catch {
+            fatalError("Couldn't open the saved-sounds store: \(error)")
+        }
+    }()
+}

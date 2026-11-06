@@ -337,7 +337,8 @@ User picks an audio file; we analyze its long-term spectrum and save a phonon th
 - **AUv3 instrument extension** (~1 day given the host-agnostic engine): App Extension target, `AUAudioUnitFactory`, `ChromaNoiseAU: AUAudioUnit` whose `internalRenderBlock` calls `engine.render`; `AUParameterTree` with `band_00`…`band_31`, `master_volume`, `tremolo_period_seconds`, `tremolo_depth`, `bypass`; `fullState` serializes a Phonon snapshot; `requestViewController` returns a `UIHostingController` wrapping `EqualizerView`; Info.plist `NSExtension` + `AudioComponents` entry of type `aumu`. Footguns: host owns the audio session (never touch it from the AU); `fullState` may be set before `allocateRenderResources` (stage and apply); no Swift retain traffic in the render block.
 - **Multi-phonon layering** — sum gain LUTs at the multiply step.
 - **Spatial audio** via `AVAudioEnvironmentNode`.
-- **App Intents / Siri / Shortcuts** — "start pink noise."
+- **App Intents / Siri / Shortcuts** — shipped in 1.0: Play (any built-in or
+  saved sound), Pause, Sleep Timer. Needs a device check with Siri.
 - **Live Activity / Dynamic Island** sleep-timer countdown.
 - **Watch companion**; **video-with-audio import** for clone.
 - **Visualizer** (idea stage, 2026-10-16). A literal noise waveform is dull;

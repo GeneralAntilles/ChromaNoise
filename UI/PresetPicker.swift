@@ -75,6 +75,10 @@ struct PresetPicker: View {
                 model.savedPresetDeleted(id: id)
             }
         }
+        // Siri learns saved names for "Play <sound> in ChromaNoise".
+        .onChange(of: saved.map(\.name)) {
+            ChromaNoiseShortcuts.updateAppShortcutParameters()
+        }
         .alert("Save Sound", isPresented: $isNaming) {
             TextField("Name", text: $draftName)
             Button("Cancel", role: .cancel) {}

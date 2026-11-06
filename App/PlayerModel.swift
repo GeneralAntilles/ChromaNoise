@@ -7,6 +7,9 @@ import Observation
 @MainActor
 @Observable
 final class PlayerModel {
+    /// The app's one player: the UI and App Intents drive the same audio.
+    static let shared = PlayerModel()
+
     let presetGroups = Presets.groups()
     let presets = Presets.phonons()
 
@@ -245,6 +248,7 @@ final class PlayerModel {
 
     private func publishNowPlaying() {
         nowPlaying?.update(title: displayName, isPlaying: isPlaying)
+        nowPlaying?.updateArtwork(amps: phonon.amps)
     }
 
     // MARK: persistence

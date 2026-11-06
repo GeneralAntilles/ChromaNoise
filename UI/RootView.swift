@@ -5,7 +5,7 @@ import SwiftUI
 /// (which holds volume and transport). Tall windows stack everything in one
 /// form; wide ones (landscape, iPad) put the painter beside the controls.
 struct RootView: View {
-    @State private var model = PlayerModel()
+    @State private var model = PlayerModel.shared
     @State private var showingAbout = false
     @Environment(\.scenePhase) private var scenePhase
     /// Landscape iPhone: every point of height counts, so the navigation bar
