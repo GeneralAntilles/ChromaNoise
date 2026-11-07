@@ -31,6 +31,9 @@ targets:
       properties:
         CFBundleDisplayName: ChromaNoise
         UIBackgroundModes: [audio]
+        # No encryption beyond Apple's own (HTTPS etc.): skips the export
+        # compliance question on every App Store Connect upload.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
