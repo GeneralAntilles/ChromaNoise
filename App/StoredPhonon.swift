@@ -32,6 +32,15 @@ extension StoredPhonon {
     /// without any view on screen).
     @MainActor static let container: ModelContainer = {
         do {
+            #if DEBUG
+            if ScreenshotScenario.current != nil {
+                let container = try ModelContainer(
+                    for: StoredPhonon.self,
+                    configurations: ModelConfiguration(isStoredInMemoryOnly: true))
+                ScreenshotScenario.seed(container.mainContext)
+                return container
+            }
+            #endif
             return try ModelContainer(for: StoredPhonon.self)
         } catch {
             fatalError("Couldn't open the saved-sounds store: \(error)")

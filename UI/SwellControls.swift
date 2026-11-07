@@ -9,6 +9,20 @@ struct SwellControls: View {
     static let periodRange: ClosedRange<Float> = 0.5...30
 
     var body: some View {
+        // Heading inside the card, styled like the preset groups', so the
+        // form doesn't spend a header's worth of space between cards.
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Swell")
+                .font(.caption.weight(.semibold))
+                .textCase(.uppercase)
+                .foregroundStyle(.secondary)
+                .accessibilityAddTraits(.isHeader)
+            Text("Slowly raises and lowers the volume, like waves.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+        .listRowSeparator(.hidden)
+
         LabeledContent {
             Slider(value: $model.tremoloDepth, in: 0...1) {
                 Text("Swell depth")

@@ -5,8 +5,8 @@ struct AboutView: View {
     @Environment(\.dismiss) private var dismiss
 
     /// Served by GitHub Pages from this repo's docs/ folder.
-    private static let privacyPolicyURL = URL(string: "https://generalantilles.github.io/ChromaNoise/privacy/")
-    private static let supportURL = URL(string: "https://generalantilles.github.io/ChromaNoise/support/")
+    static let privacyPolicyURL = URL(string: "https://generalantilles.github.io/ChromaNoise/privacy/")
+    static let supportURL = URL(string: "https://generalantilles.github.io/ChromaNoise/support/")
     private static let sourceURL = URL(string: "https://github.com/GeneralAntilles/ChromaNoise")
     private static let chromaDozeURL = URL(string: "https://github.com/pmarks-net/chromadoze")
 

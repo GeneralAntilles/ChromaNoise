@@ -7,9 +7,8 @@ struct NowPlayingBar: View {
     @Bindable var model: PlayerModel
     /// Caps the bar's contents on wide windows; the material spans the width.
     var maxContentWidth: CGFloat = .infinity
-    /// When set, the bar shows an About button (used where the navigation
-    /// bar is hidden).
-    var showAbout: (() -> Void)?
+    /// Opens the About sheet from the bar's "more" menu.
+    var showAbout: () -> Void
 
     /// Landscape iPhone: a shorter bar leaves room for the controls above.
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -23,14 +22,7 @@ struct NowPlayingBar: View {
                 status
                 Spacer()
                 sleepTimerMenu
-                if let showAbout {
-                    Button(action: showAbout) {
-                        Image(systemName: "info.circle")
-                            .frame(width: 44, height: 44)   // full touch target
-                            .contentShape(Rectangle())
-                    }
-                    .accessibilityLabel("About")
-                }
+                moreMenu
             }
 
             if isShort {
@@ -91,6 +83,26 @@ struct NowPlayingBar: View {
                 .padding(.vertical, isShort ? 4 : 8)
         }
         .buttonStyle(.borderedProminent)
+    }
+
+    /// About and the hosted help pages. Living in the bar keeps the
+    /// screen free of a navigation bar on every layout.
+    private var moreMenu: some View {
+        Menu {
+            Button("About ChromaNoise", systemImage: "info.circle", action: showAbout)
+            if let url = AboutView.supportURL {
+                Link(destination: url) { Label("Help & Support", systemImage: "questionmark.circle") }
+            }
+            if let url = AboutView.privacyPolicyURL {
+                Link(destination: url) { Label("Privacy Policy", systemImage: "hand.raised") }
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.title3)
+                .frame(width: 44, height: 44)   // full touch target
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More")
     }
 
     private var sleepTimerMenu: some View {

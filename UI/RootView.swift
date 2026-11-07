@@ -8,36 +8,28 @@ struct RootView: View {
     @State private var model = PlayerModel.shared
     @State private var showingAbout = false
     @Environment(\.scenePhase) private var scenePhase
-    /// Landscape iPhone: every point of height counts, so the navigation bar
-    /// is hidden and About moves into the now-playing bar.
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-    private var isShort: Bool { verticalSizeClass == .compact }
 
     /// Widest the single-column form grows before it gets side margins.
     private static let maxColumnWidth: CGFloat = 700
     private static let wideTopMargin: CGFloat = 16
+    /// Inset-grouped cards' side margin.
+    private static let cardInset: CGFloat = 16
 
     var body: some View {
-        NavigationStack {
-            GeometryReader { geometry in
-                if geometry.size.width > geometry.size.height * 1.1 {
-                    wideLayout(width: geometry.size.width)
-                } else {
-                    tallLayout(size: geometry.size)
-                }
-            }
-            .toolbar {
-                if !isShort {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("About", systemImage: "info.circle") { showingAbout = true }
-                    }
-                }
-            }
-            .toolbar(isShort ? .hidden : .automatic, for: .navigationBar)
-            .sheet(isPresented: $showingAbout) {
-                AboutView()
+        GeometryReader { geometry in
+            if geometry.size.width > geometry.size.height * 1.1 {
+                wideLayout(width: geometry.size.width)
+            } else {
+                tallLayout(size: geometry.size)
             }
         }
+        .sheet(isPresented: $showingAbout) {
+            AboutView()
+        }
+        #if DEBUG
+        .preferredColorScheme(ScreenshotScenario.current?.colorScheme)
+        .task { ScreenshotScenario.current?.apply(to: model) }
+        #endif
         // Leaving the foreground covers backgrounding and the app switcher
         // (where a swipe-kill follows), so the last sound survives either.
         .onChange(of: scenePhase) { _, phase in
@@ -49,7 +41,8 @@ struct RootView: View {
     /// and the column stays a readable width.
     private func tallLayout(size: CGSize) -> some View {
         let equalizerHeight = size.height >= 900 ? min(size.height * 0.35, 480) : 220
-        let margin = max(0, (size.width - Self.maxColumnWidth) / 2)
+        // Never below the inset-grouped default, or the cards lose their insets.
+        let margin = max(Self.cardInset, (size.width - Self.maxColumnWidth) / 2)
         return Form {
             Section {
                 equalizer
@@ -58,9 +51,11 @@ struct RootView: View {
             }
             controlSections
         }
+        .listSectionSpacing(.compact)
         .contentMargins(.horizontal, margin, for: .scrollContent)
+        .contentMargins(.top, 8, for: .scrollContent)
         .safeAreaInset(edge: .bottom) {
-            NowPlayingBar(model: model, maxContentWidth: Self.maxColumnWidth)
+            NowPlayingBar(model: model, maxContentWidth: Self.maxColumnWidth) { showingAbout = true }
         }
     }
 
@@ -81,9 +76,10 @@ struct RootView: View {
             Form {
                 controlSections
             }
+            .listSectionSpacing(.compact)
             .contentMargins(.top, Self.wideTopMargin, for: .scrollContent)
             .safeAreaInset(edge: .bottom) {
-                NowPlayingBar(model: model, showAbout: isShort ? { showingAbout = true } : nil)
+                NowPlayingBar(model: model) { showingAbout = true }
             }
             .frame(width: min(max(width * 0.4, 340), 460))
         }
@@ -103,10 +99,6 @@ struct RootView: View {
 
         Section {
             SwellControls(model: model)
-        } header: {
-            Text("Swell")
-        } footer: {
-            Text("Slowly raises and lowers the volume, like waves.")
         }
 
         if let error = model.errorMessage {

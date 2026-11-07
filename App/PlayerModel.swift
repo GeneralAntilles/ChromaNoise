@@ -94,7 +94,7 @@ final class PlayerModel {
     @ObservationIgnored private var nowPlaying: NowPlayingController?
 
     init() {
-        if let saved = Self.loadSavedState() {
+        if !Self.isScreenshotRun, let saved = Self.loadSavedState() {
             phonon = saved.phonon
             // A built-in removed since (e.g. Grey, Violet) restores as Custom.
             if case .builtIn(let name) = saved.selection, !presets.contains(where: { $0.name == name }) {
@@ -196,7 +196,17 @@ final class PlayerModel {
     }
 
     private func applyVolume() {
-        host.setMasterVolume(masterVolume * fadeGain)
+        // Screenshot runs show playback without making noise.
+        host.setMasterVolume(Self.isScreenshotRun ? 0 : masterVolume * fadeGain)
+    }
+
+    /// Staged App Store screenshot run (debug builds only).
+    private static var isScreenshotRun: Bool {
+        #if DEBUG
+        ScreenshotScenario.current != nil
+        #else
+        false
+        #endif
     }
 
     // MARK: transport
@@ -264,6 +274,7 @@ final class PlayerModel {
     private static let savedStateKey = "lastSound"
 
     func saveState() {
+        guard !Self.isScreenshotRun else { return }   // keep the user's last sound
         let state = SavedState(phonon: phonon, selection: selection, masterVolume: masterVolume)
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: Self.savedStateKey)
