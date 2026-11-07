@@ -162,34 +162,39 @@ final class StandaloneAudioHost {
     }
 
     /// iOS 27 has asynchronous activation; earlier versions get the blocking
-    /// call on a background queue.
+    /// call on a background queue. (The iOS 27 calls need the iOS 27 SDK,
+    /// Swift 6.4+; CI's older Xcode builds just the fallback.)
     private static func activate(_ session: AVAudioSession) async -> Result<Void, Error> {
         await withCheckedContinuation { (continuation: CheckedContinuation<Result<Void, Error>, Never>) in
+            #if compiler(>=6.4)
             if #available(iOS 27.0, *) {
                 session.activate(options: []) { activated, error in
                     continuation.resume(returning: activated
                         ? .success(())
                         : .failure(error ?? HostError.activationFailed))
                 }
-            } else {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    continuation.resume(returning: Result { try session.setActive(true) })
-                }
+                return
+            }
+            #endif
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: Result { try session.setActive(true) })
             }
         }
     }
 
     private static func deactivate(_ session: AVAudioSession) async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            #if compiler(>=6.4)
             if #available(iOS 27.0, *) {
                 session.deactivate(options: .notifyOthersOnDeactivation) { _, _ in
                     continuation.resume()
                 }
-            } else {
-                DispatchQueue.global(qos: .userInitiated).async {
-                    try? session.setActive(false, options: .notifyOthersOnDeactivation)
-                    continuation.resume()
-                }
+                return
+            }
+            #endif
+            DispatchQueue.global(qos: .userInitiated).async {
+                try? session.setActive(false, options: .notifyOthersOnDeactivation)
+                continuation.resume()
             }
         }
     }
