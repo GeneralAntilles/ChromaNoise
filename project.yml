@@ -30,6 +30,8 @@ targets:
       path: App/Info.plist
       properties:
         CFBundleDisplayName: ChromaNoise
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIBackgroundModes: [audio]
         # No encryption beyond Apple's own (HTTPS etc.): skips the export
         # compliance question on every App Store Connect upload.
@@ -50,6 +52,10 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.talkabel.ChromaNoise
+        # Marketing version is bumped by hand per release; tools/release.sh
+        # overrides the build number with the git commit count.
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
         TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

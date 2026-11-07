@@ -33,6 +33,10 @@ python3 tools/reference_dsp.py        # needs numpy
 
 # App Store screenshots (6.1" iPhone, 13" iPad, iPhone Duo) -> screenshots/<device>/
 tools/screenshots.sh                  # scenes: App/ScreenshotScenario.swift
+
+# TestFlight upload (needs the App Store Connect API key in ~/.appstoreconnect/)
+tools/release.sh                      # archive, upload, wait for processing
+tools/asc.py builds                   # recent builds and processing state
 ```
 
 The kit also builds and tests on Linux (CI does this in `swift:6.1-noble`).
