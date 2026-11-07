@@ -76,12 +76,18 @@ def get(path: str, **params) -> dict:
     url = f"{API}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token()}"})
-    try:
-        with urllib.request.urlopen(request, timeout=30) as response:
-            return json.load(response)
-    except urllib.error.HTTPError as error:
-        sys.exit(f"App Store Connect API {error.code}: {error.read().decode()[:500]}")
+    # Retry network hiccups (timeouts, resets); API errors fail at once.
+    for attempt in range(4):
+        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token()}"})
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.load(response)
+        except urllib.error.HTTPError as error:
+            sys.exit(f"App Store Connect API {error.code}: {error.read().decode()[:500]}")
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+            if attempt == 3:
+                sys.exit(f"App Store Connect unreachable: {error}")
+            time.sleep(5 * 2 ** attempt)
 
 
 def app_id() -> str:
