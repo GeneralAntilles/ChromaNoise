@@ -110,13 +110,14 @@ final class PlayerModel {
         }
         host.apply(phonon)
         applyVolume()
-        // Interruptions and route changes start/stop the host on its own;
-        // it reports them on the main queue.
+        // Interruptions and route changes start/stop the host on its own.
         host.onRunningChange = { [weak self] running in
-            MainActor.assumeIsolated { self?.isPlaying = running }
+            self?.isPlaying = running
         }
+        // Remote commands must answer synchronously, so Play reports success
+        // once a start is under way; a failure shows in the UI's error row.
         nowPlaying = NowPlayingController(
-            play: { [weak self] in self?.play() ?? false },
+            play: { [weak self] in self?.startPlaying(); return self != nil },
             pause: { [weak self] in self?.pause(); return self != nil },
             stop: { [weak self] in self?.stop(); return self != nil },
             toggle: { [weak self] in self?.remoteToggle() ?? false })
@@ -211,31 +212,46 @@ final class PlayerModel {
 
     // MARK: transport
 
-    /// The on-screen button: does what its label says.
+    /// The on-screen button: does what its label says. A start still
+    /// activating counts as playing, so a quick second tap cancels it.
     func togglePlayback() {
-        if isPlaying { pause() } else { play() }
+        if isPlaying || host.isStarting { pause() } else { startPlaying() }
     }
 
-    /// Headphone/Siri toggle: an interruption that will auto-resume counts as
-    /// playing, so a toggle mid-interruption pauses for good.
+    /// Headphone/Siri toggle: an interruption that will auto-resume (or a
+    /// start under way) counts as playing, so a toggle pauses for good.
     private func remoteToggle() -> Bool {
-        if host.isRunning || host.isAwaitingResume {
+        if host.isRunning || host.isAwaitingResume || host.isStarting {
             pause()
-            return true
+        } else {
+            startPlaying()
         }
-        return play()
+        return true
     }
 
-    /// Returns whether audio is now playing.
+    /// Starts playback without waiting for it (buttons, remote commands).
+    /// The start is registered with the host immediately, so a pause,
+    /// interruption or unplug right after still cancels it.
+    func startPlaying() {
+        let start = host.requestStart()
+        Task { await finishStart(start) }
+    }
+
+    /// Activates audio and starts playing. Returns whether audio is now
+    /// playing; false if it failed or was cancelled meanwhile.
     @discardableResult
-    func play() -> Bool {
-        if !host.isRunning {
-            do {
-                try host.start()
-                errorMessage = nil
-            } catch {
-                errorMessage = "Couldn't start audio: \(error.localizedDescription)"
-            }
+    func play() async -> Bool {
+        await finishStart(host.requestStart())
+    }
+
+    private func finishStart(_ start: Task<Void, Error>) async -> Bool {
+        do {
+            try await start.value
+            errorMessage = nil
+        } catch is CancellationError {
+            // Paused, stopped, interrupted or unplugged while starting.
+        } catch {
+            errorMessage = "Couldn't start audio: \(error.localizedDescription)"
         }
         isPlaying = host.isRunning
         return isPlaying

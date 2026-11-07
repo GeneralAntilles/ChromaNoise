@@ -28,7 +28,7 @@ struct RootView: View {
         }
         #if DEBUG
         .preferredColorScheme(ScreenshotScenario.current?.colorScheme)
-        .task { ScreenshotScenario.current?.apply(to: model) }
+        .task { await ScreenshotScenario.current?.apply(to: model) }
         #endif
         // Leaving the foreground covers backgrounding and the app switcher
         // (where a swipe-kill follows), so the last sound survives either.

@@ -48,7 +48,7 @@ enum ScreenshotScenario: String {
 
     /// Put the model into this scene's state.
     @MainActor
-    func apply(to model: PlayerModel) {
+    func apply(to model: PlayerModel) async {
         model.masterVolume = 0.65
         switch self {
         case .paint, .landscape:
@@ -66,7 +66,7 @@ enum ScreenshotScenario: String {
                 model.load(brown, as: .builtIn(name: brown.name))
             }
         }
-        model.play()
+        await model.play()
         if self == .sleep { model.setSleepTimer(minutes: 30) }
     }
 

@@ -116,7 +116,7 @@ struct PlaySoundIntent: AudioPlaybackIntent {
             }
             model.load(phonon, as: selection)
         }
-        guard model.play() else { throw ChromaNoiseIntentError.couldNotStartAudio }
+        guard await model.play() else { throw ChromaNoiseIntentError.couldNotStartAudio }
         // A Siri launch may never show a scene (whose phase change normally
         // saves), so remember the sound now.
         model.saveState()
@@ -151,7 +151,7 @@ struct SetSleepTimerIntent: AudioPlaybackIntent {
     func perform() async throws -> some IntentResult {
         let model = PlayerModel.shared
         // Start first: a timer on silence would be pointless at bedtime.
-        guard model.play() else { throw ChromaNoiseIntentError.couldNotStartAudio }
+        guard await model.play() else { throw ChromaNoiseIntentError.couldNotStartAudio }
         model.setSleepTimer(minutes: minutes)
         return .result()
     }
