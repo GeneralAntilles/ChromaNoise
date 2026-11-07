@@ -31,7 +31,7 @@ struct AboutView: View {
                 }
 
                 Section {
-                    Text("ChromaNoise is an independent iOS take on ChromaDoze, Paul Marks's noise generator for Android. It doesn't share ChromaDoze's code.")
+                    Text("ChromaNoise is an independent iOS take on ChromaDoze, Paul Marks's noise generator for Android.")
                     if let url = Self.chromaDozeURL {
                         Link("ChromaDoze on GitHub", destination: url)
                     }
