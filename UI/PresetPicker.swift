@@ -28,14 +28,11 @@ struct PresetPicker: View {
             }
             section("My Sounds") {
                 ForEach(saved) { stored in
-                    chip(stored.name, selected: model.selection == .saved(id: stored.id)) {
+                    Chip(title: stored.name, selected: model.selection == .saved(id: stored.id)) {
                         if let phonon = stored.phonon {
                             model.load(phonon, as: .saved(id: stored.id))
                         }
-                    }
-                    // Lift just the chip, not the whole Form row, on long-press.
-                    .contentShape(.contextMenuPreview, Capsule())
-                    .contextMenu {
+                    } menu: {
                         Button("Rename", systemImage: "pencil") {
                             draftName = stored.name
                             renaming = stored
@@ -111,20 +108,7 @@ struct PresetPicker: View {
     }
 
     private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Text(title)
-                .font(.subheadline.weight(.medium))
-                .lineLimit(1)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .foregroundStyle(selected ? Color.white : Color.primary)
-                .background(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.fill.tertiary),
-                            in: Capsule())
-                .frame(minHeight: 44)   // full-size hit target, compact capsule
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        Chip(title: title, selected: selected, action: action)
     }
 
     private var trimmedDraft: String {
@@ -142,5 +126,65 @@ struct PresetPicker: View {
         guard !name.isEmpty, let stored = try? StoredPhonon(phonon: phonon, name: name) else { return }
         context.insert(stored)
         model.load(phonon, as: .saved(id: stored.id))
+    }
+}
+
+/// A preset chip: a compact capsule inside a full 44 pt hit target. Chips
+/// with a menu (saved sounds) are a `Menu` whose tap is the primary action
+/// and whose long-press opens the menu from the chip itself. (A
+/// `.contextMenu` would instead lift the whole Form row, every chip in it.)
+private struct Chip<MenuItems: View>: View {
+    let title: String
+    let selected: Bool
+    let action: () -> Void
+    let menu: MenuItems?
+
+    init(title: String, selected: Bool, action: @escaping () -> Void,
+         @ViewBuilder menu: () -> MenuItems) {
+        self.title = title
+        self.selected = selected
+        self.action = action
+        self.menu = menu()
+    }
+
+    var body: some View {
+        Group {
+            if let menu {
+                Menu {
+                    menu
+                } label: {
+                    label
+                } primaryAction: {
+                    action()
+                }
+                .menuIndicator(.hidden)
+            } else {
+                Button(action: action) { label }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    private var label: some View {
+        Text(title)
+            .font(.subheadline.weight(.medium))
+            .lineLimit(1)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.fill.tertiary),
+                        in: Capsule())
+            .frame(minHeight: 44)   // full-size hit target, compact capsule
+            .contentShape(Rectangle())
+    }
+}
+
+extension Chip where MenuItems == EmptyView {
+    init(title: String, selected: Bool, action: @escaping () -> Void) {
+        self.title = title
+        self.selected = selected
+        self.action = action
+        self.menu = nil
     }
 }
