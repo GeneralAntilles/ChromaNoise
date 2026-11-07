@@ -8,7 +8,8 @@
 # Build number = git commit count, so every upload is unique and increasing.
 # The version (1.0, ...) is MARKETING_VERSION in project.yml.
 #
-# Auth: App Store Connect API key, configured outside the repo:
+# Auth: Xcode's signed-in Apple ID for signing/upload (see AUTH below), and
+# an App Store Connect API key for status checks, configured outside the repo:
 #   ~/.appstoreconnect/chromanoise.env        ASC_KEY_ID, ASC_ISSUER_ID
 #   ~/.appstoreconnect/private_keys/AuthKey_<ASC_KEY_ID>.p8
 set -euo pipefail
@@ -23,10 +24,17 @@ fi
 
 set -a; source ~/.appstoreconnect/chromanoise.env; set +a
 KEY_PATH="$HOME/.appstoreconnect/private_keys/AuthKey_${ASC_KEY_ID}.p8"
-AUTH=(-allowProvisioningUpdates
-      -authenticationKeyPath "$KEY_PATH"
-      -authenticationKeyID "$ASC_KEY_ID"
-      -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+# Signing for the App Store uses Apple's cloud-managed distribution
+# certificate, which only Admin-role API keys may use. By default sign and
+# upload with the Apple ID signed in to Xcode; set ASC_SIGN_WITH_KEY=1 if the
+# key has the Admin role (needed for headless use, e.g. CI). The key is
+# always used to check processing status (tools/asc.py).
+AUTH=(-allowProvisioningUpdates)
+if [ "${ASC_SIGN_WITH_KEY:-0}" = 1 ]; then
+    AUTH+=(-authenticationKeyPath "$KEY_PATH"
+           -authenticationKeyID "$ASC_KEY_ID"
+           -authenticationKeyIssuerID "$ASC_ISSUER_ID")
+fi
 
 BUILD=$(git rev-list --count HEAD)
 ARCHIVE="build/ChromaNoise-$BUILD.xcarchive"
@@ -55,10 +63,16 @@ cat > "$OPTIONS" <<PLIST
 PLIST
 
 echo "==> Uploading build $BUILD"
+LOG="build/upload-$BUILD.log"
+status=0
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "build/upload-$BUILD" \
-    -exportOptionsPlist "$OPTIONS" "${AUTH[@]}" 2>&1 \
-    | grep -E "EXPORT|Upload|error" || true
+    -exportOptionsPlist "$OPTIONS" "${AUTH[@]}" > "$LOG" 2>&1 || status=$?
 rm -f "$OPTIONS"
+grep -E "EXPORT|Upload|error" "$LOG" || true
+if [ $status -ne 0 ]; then
+    echo "Upload failed; full log: $LOG" >&2
+    exit $status
+fi
 
 echo "==> Waiting for App Store Connect to process build $BUILD"
 tools/asc.py wait-build "$BUILD"
