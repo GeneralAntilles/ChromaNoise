@@ -68,8 +68,16 @@ for test in json.load(open(os.path.join(raw, "manifest.json"))):
         name = re.sub(r"_\d+_[0-9A-F-]+$", "", os.path.splitext(a["suggestedHumanReadableName"])[0])
         shutil.copy(os.path.join(raw, a["exportedFileName"]), os.path.join(dest, name + ".png"))
 EOF
+    # Accepted App Store sizes (portrait or landscape) for the 6.9" iPhone
+    # and 13" iPad slots.
     for f in "$dest"/*.png; do
-        echo "    $(basename "$f")  $(sips -g pixelWidth -g pixelHeight "$f" | awk '/pixel/ {printf "%s ", $2}')"
+        w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/ {print $2}')
+        h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/ {print $2}')
+        case "${w}x${h}" in
+            1320x2868|2868x1320|1290x2796|2796x1290|2064x2752|2752x2064|2048x2732|2732x2048) ok="" ;;
+            *) ok="  <-- not an App Store size" ;;
+        esac
+        echo "    $(basename "$f")  ${w}x${h}${ok}"
     done
 done
 

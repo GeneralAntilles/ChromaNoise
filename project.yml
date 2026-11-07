@@ -51,6 +51,19 @@ targets:
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  # App Store screenshots only (tools/screenshots.sh); not part of CI.
+  ChromaNoiseUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: ChromaNoise
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.talkabel.ChromaNoiseUITests
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
 schemes:
   ChromaNoise:
     build:
@@ -62,3 +75,12 @@ schemes:
       config: Debug
       targets:
         - package: ChromaNoiseKit/ChromaNoiseKitTests
+  Screenshots:
+    build:
+      targets:
+        ChromaNoise: all
+        ChromaNoiseUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - ChromaNoiseUITests

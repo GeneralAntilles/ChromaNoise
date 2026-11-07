@@ -81,7 +81,7 @@ struct RootView: View {
             .safeAreaInset(edge: .bottom) {
                 NowPlayingBar(model: model) { showingAbout = true }
             }
-            .frame(width: min(max(width * 0.4, 340), 460))
+            .frame(width: min(max(width * 0.46, 340), 460))
         }
         .background(Color(.systemGroupedBackground))
     }

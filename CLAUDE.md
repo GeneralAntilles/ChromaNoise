@@ -30,6 +30,9 @@ xcodebuild build -project ChromaNoise.xcodeproj -scheme ChromaNoise \
 (cd Packages/ChromaNoiseKit && swift test -c release)
 
 python3 tools/reference_dsp.py        # needs numpy
+
+# App Store screenshots (6.9" iPhone + 13" iPad) -> screenshots/<device>/
+tools/screenshots.sh                  # scenes: App/ScreenshotScenario.swift
 ```
 
 The kit also builds and tests on Linux (CI does this in `swift:6.1-noble`).
