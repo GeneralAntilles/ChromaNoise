@@ -36,6 +36,13 @@ final class ScreenshotTests: XCTestCase {
         app.launchArguments = ["-screenshot", scene]
         app.launch()
         XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 20), "\(scene): never started playing")
+        // Some displays don't rotate (iPhone Duo's folded outer screen);
+        // skip landscape there rather than save a duplicate portrait shot.
+        if orientation.isLandscape, app.frame.width < app.frame.height {
+            app.terminate()
+            XCUIDevice.shared.orientation = .portrait
+            return
+        }
         prepare(app)
         sleep(2)   // let animations settle and the clocks tick past 0:00
 

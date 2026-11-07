@@ -31,7 +31,7 @@ xcodebuild build -project ChromaNoise.xcodeproj -scheme ChromaNoise \
 
 python3 tools/reference_dsp.py        # needs numpy
 
-# App Store screenshots (6.9" iPhone + 13" iPad) -> screenshots/<device>/
+# App Store screenshots (6.1" iPhone, 13" iPad, iPhone Duo) -> screenshots/<device>/
 tools/screenshots.sh                  # scenes: App/ScreenshotScenario.swift
 ```
 

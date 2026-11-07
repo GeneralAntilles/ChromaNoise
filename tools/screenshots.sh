@@ -9,9 +9,13 @@
 # scenes from App/ScreenshotScenario.swift), and export the PNGs to
 # screenshots/<device>/. Audio is muted in staged scenes.
 #
-# Device choice: App Store Connect needs a 6.9" iPhone set (1320x2868) and,
-# since the app runs on iPad, a 13" iPad set (2064x2752); it scales those
-# down for smaller devices.
+# Device choice (App Store Connect, Nov 2026): a 6.1" iPhone set is required
+# (1206x2622, iPhone 17), as is a 13" iPad set (2064x2752) since the app runs
+# on iPad. iPhone Duo screenshots (outer 1398x2034, inner 2007x2853) are
+# optional until April 2027 and earn the "Made for iPhone Duo" badge.
+# The Duo simulator boots folded (outer display); for inner-display shots,
+# unfold it from Simulator's Device menu, then run: tools/screenshots.sh "iPhone Duo"
+# (the folded outer display doesn't rotate, so it gets no landscape shot).
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -19,7 +23,7 @@ export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Develope
 
 DEVICES=("$@")
 if [ ${#DEVICES[@]} -eq 0 ]; then
-    DEVICES=("iPhone 18 Pro Max" "iPad Pro 13-inch (M5)")
+    DEVICES=("iPhone 17" "iPad Pro 13-inch (M5)" "iPhone Duo")
 fi
 
 OUT=screenshots
@@ -68,13 +72,13 @@ for test in json.load(open(os.path.join(raw, "manifest.json"))):
         name = re.sub(r"_\d+_[0-9A-F-]+$", "", os.path.splitext(a["suggestedHumanReadableName"])[0])
         shutil.copy(os.path.join(raw, a["exportedFileName"]), os.path.join(dest, name + ".png"))
 EOF
-    # Accepted App Store sizes (portrait or landscape) for the 6.9" iPhone
-    # and 13" iPad slots.
+    # Accepted App Store sizes (portrait or landscape): 6.1" iPhone, 6.9"
+    # iPhone, 13" iPad, iPhone Duo outer and inner displays.
     for f in "$dest"/*.png; do
         w=$(sips -g pixelWidth "$f" | awk '/pixelWidth/ {print $2}')
         h=$(sips -g pixelHeight "$f" | awk '/pixelHeight/ {print $2}')
         case "${w}x${h}" in
-            1320x2868|2868x1320|1290x2796|2796x1290|2064x2752|2752x2064|2048x2732|2732x2048) ok="" ;;
+            1206x2622|2622x1206|1179x2556|2556x1179|1320x2868|2868x1320|1290x2796|2796x1290|2064x2752|2752x2064|2048x2732|2732x2048|1398x2034|2034x1398|2007x2853|2853x2007) ok="" ;;
             *) ok="  <-- not an App Store size" ;;
         esac
         echo "    $(basename "$f")  ${w}x${h}${ok}"
