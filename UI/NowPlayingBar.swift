@@ -1,12 +1,16 @@
 import SwiftUI
 
-/// Bottom bar: what's playing, for how long, the sleep timer, and Play/Pause.
-/// The clocks are system timer texts — SwiftUI updates them only while on
-/// screen, so they cost nothing in the background or with the display off.
+/// Mini player: what's playing and Play/Pause on top, then volume, the
+/// sleep timer and the "more" menu. The clocks are system timer texts —
+/// SwiftUI updates them only while on screen, so they cost nothing in the
+/// background or with the display off.
 struct NowPlayingBar: View {
     @Bindable var model: PlayerModel
     /// Caps the bar's contents on wide windows; the material spans the width.
     var maxContentWidth: CGFloat = .infinity
+    /// Wide layouts: a card in the controls column, edges aligned with the
+    /// cards above, instead of a full-width bar.
+    var isCard = false
     /// Opens the About sheet from the bar's "more" menu.
     var showAbout: () -> Void
 
@@ -15,36 +19,40 @@ struct NowPlayingBar: View {
     private var isShort: Bool { verticalSizeClass == .compact }
 
     private static let timerChoices = [5, 15, 30, 60, 90]
+    private static let cardCornerRadius: CGFloat = 24
 
     var body: some View {
-        VStack(spacing: isShort ? 8 : 12) {
-            HStack(alignment: .center) {
+        let content = VStack(spacing: isShort ? 2 : 6) {
+            HStack(spacing: 8) {
                 status
                 if model.isEdited {
                     revertButton
                 }
-                Spacer()
+                Spacer(minLength: 0)
+                playButton
+            }
+            HStack(spacing: 4) {
+                volumeSlider
                 sleepTimerMenu
                 moreMenu
             }
-
-            if isShort {
-                // Landscape iPhone: transport and volume share a row.
-                HStack(spacing: 16) {
-                    playButton
-                        .fixedSize()
-                    volumeSlider
-                }
-            } else {
-                volumeSlider
-                playButton
-            }
         }
         .frame(maxWidth: maxContentWidth)
-        .padding(isShort ? 12 : 16)
-        .frame(maxWidth: .infinity)
-        // Opaque-ish bar material: on short screens the Form scrolls beneath.
-        .background(.bar)
+
+        if isCard {
+            content
+                .padding(.horizontal, 16)
+                .padding(.vertical, isShort ? 8 : 12)
+                .background(Color(.secondarySystemGroupedBackground),
+                            in: RoundedRectangle(cornerRadius: Self.cardCornerRadius, style: .continuous))
+        } else {
+            content
+                .padding(.horizontal, 16)
+                .padding(.vertical, isShort ? 8 : 12)
+                .frame(maxWidth: .infinity)
+                // Opaque-ish bar material: the Form scrolls beneath.
+                .background(.bar)
+        }
     }
 
     private var status: some View {
@@ -101,14 +109,15 @@ struct NowPlayingBar: View {
 
     private var playButton: some View {
         Button(action: model.togglePlayback) {
+            // Label keeps "Play"/"Pause" as the accessibility label.
             Label(model.isPlaying ? "Pause" : "Play",
                   systemImage: model.isPlaying ? "pause.fill" : "play.fill")
-                .font(isShort ? .headline : .title2.weight(.semibold))
-                .frame(maxWidth: isShort ? nil : .infinity)
-                .frame(minWidth: isShort ? 120 : nil)
-                .padding(.vertical, isShort ? 4 : 8)
+                .labelStyle(.iconOnly)
+                .font(.title2.weight(.semibold))
+                .frame(width: isShort ? 36 : 44, height: isShort ? 36 : 44)
         }
         .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.circle)
     }
 
     /// About and the hosted help pages. Living in the bar keeps the
@@ -125,6 +134,9 @@ struct NowPlayingBar: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.title3)
+                // Color, not the hierarchical style: in a Menu label that would
+                // resolve against the tint and stay indigo.
+                .foregroundStyle(Color.secondary)
                 .frame(width: 44, height: 44)   // full touch target
                 .contentShape(Rectangle())
         }
@@ -150,7 +162,9 @@ struct NowPlayingBar: View {
                 }
             }
             .font(.subheadline.weight(.medium))
-            .padding(.horizontal, 12)
+            // Neutral; a running countdown reads at full strength.
+            .foregroundStyle(model.sleepTimer == nil ? Color.secondary : Color.primary)
+            .padding(.horizontal, 8)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }

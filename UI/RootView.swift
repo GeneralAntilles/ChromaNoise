@@ -14,6 +14,8 @@ struct RootView: View {
     private static let wideTopMargin: CGFloat = 16
     /// Inset-grouped cards' side margin.
     private static let cardInset: CGFloat = 16
+    /// The form's card inset in wide windows (landscape, iPad).
+    private static let wideCardInset: CGFloat = 20
 
     var body: some View {
         GeometryReader { geometry in
@@ -38,9 +40,9 @@ struct RootView: View {
     }
 
     /// Portrait: one scrolling form. On tall iPad windows the painter grows
-    /// and the column stays a readable width.
+    /// into the room the controls leave, and the column stays a readable width.
     private func tallLayout(size: CGSize) -> some View {
-        let equalizerHeight = size.height >= 900 ? min(size.height * 0.35, 480) : 220
+        let equalizerHeight = size.height >= 900 ? min(size.height * 0.45, 720) : 220
         // Never below the inset-grouped default, or the cards lose their insets.
         let margin = max(Self.cardInset, (size.width - Self.maxColumnWidth) / 2)
         return Form {
@@ -59,8 +61,8 @@ struct RootView: View {
         }
     }
 
-    /// Landscape / wide: the painter fills the left, controls scroll on the
-    /// right above their own now-playing bar.
+    /// Landscape / wide: the painter fills the left; the controls scroll on
+    /// the right above the now-playing card, whose edges line up with theirs.
     private func wideLayout(width: CGFloat) -> some View {
         HStack(spacing: 16) {
             equalizer
@@ -69,19 +71,22 @@ struct RootView: View {
                             in: RoundedRectangle(cornerRadius: 24, style: .continuous))
                 // Leading inset matches the form's trailing card inset; top
                 // matches the form's first card.
-                .padding([.leading, .bottom], 20)
+                .padding([.leading, .bottom], Self.wideCardInset)
                 .padding(.top, Self.wideTopMargin)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            Form {
-                controlSections
+            VStack(spacing: 0) {
+                Form {
+                    controlSections
+                }
+                .listSectionSpacing(.compact)
+                .contentMargins(.top, Self.wideTopMargin, for: .scrollContent)
+
+                NowPlayingBar(model: model, isCard: true) { showingAbout = true }
+                    // Same insets as the form's cards; bottom matches the painter.
+                    .padding([.horizontal, .bottom], Self.wideCardInset)
             }
-            .listSectionSpacing(.compact)
-            .contentMargins(.top, Self.wideTopMargin, for: .scrollContent)
-            .safeAreaInset(edge: .bottom) {
-                NowPlayingBar(model: model) { showingAbout = true }
-            }
-            .frame(width: min(max(width * 0.46, 340), 460))
+            .frame(width: min(max(width * 0.5, 340), 480))   // four chips a row on 6.1" phones
         }
         .background(Color(.systemGroupedBackground))
     }
