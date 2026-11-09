@@ -4,9 +4,10 @@
 #   tools/screenshots.sh                 # all devices below
 #   tools/screenshots.sh "iPad Pro 13-inch (M5)"
 #
-# For each device: boot, force the 9:41 status bar, run the Screenshots
-# scheme (UITests/ScreenshotTests.swift, which launches the app's staged
-# scenes from App/ScreenshotScenario.swift), and export the PNGs to
+# Builds the Screenshots scheme once for the simulator, then for each
+# device: boot, force the 9:41 status bar, run the already-built tests
+# (UITests/ScreenshotTests.swift, which launches the app's staged scenes
+# from App/ScreenshotScenario.swift), and export the PNGs to
 # screenshots/<device>/. Audio is muted in staged scenes.
 #
 # Device choice (App Store Connect, Nov 2026): a 6.1" iPhone set is required
@@ -32,6 +33,16 @@ trap 'rm -rf "$WORK"' EXIT
 
 xcodegen --quiet
 
+# One build for every device. Its own derived data (kept between runs, so
+# incremental) so an Xcode build of the app can't swap products out mid-run.
+DERIVED=build/screenshots-derived-data
+echo "==> Building"
+xcodebuild build-for-testing -quiet \
+    -project ChromaNoise.xcodeproj -scheme Screenshots \
+    -destination 'generic/platform=iOS Simulator' \
+    -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO
+xctestrun=$(ls "$DERIVED"/Build/Products/*.xctestrun | head -n 1)
+
 for device in "${DEVICES[@]}"; do
     echo "==> $device"
     udid=$(xcrun simctl list devices available -j | python3 -c "
@@ -51,10 +62,9 @@ sys.exit('no simulator named ' + name)" "$device")
         --batteryState charged --batteryLevel 100
 
     result="$WORK/$udid.xcresult"
-    xcodebuild test -quiet \
-        -project ChromaNoise.xcodeproj -scheme Screenshots \
-        -destination "id=$udid" -resultBundlePath "$result" \
-        CODE_SIGNING_ALLOWED=NO
+    xcodebuild test-without-building -quiet \
+        -xctestrun "$xctestrun" \
+        -destination "id=$udid" -resultBundlePath "$result"
 
     xcrun simctl status_bar "$udid" clear
 
