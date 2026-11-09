@@ -16,6 +16,11 @@ audio session and the render contract is the same raw-pointer pull).
   File decoding lives in the app target (it needs `AVAudioFile`); only the
   pure-DSP half is here.
 - `Models/` — `Phonon` (the preset struct) and the built-in presets.
+- `Transport/` — the standalone host's play/pause logic, testable without
+  an audio stack: `TransportMachine` is the pure policy (interruptions,
+  route loss, starts superseded mid-activation); `TransportDriver` performs
+  its effects against a `TransportBackend` (the app's AVFoundation host),
+  serializing session operations and handing out awaitable starts.
 
 ## Verification
 

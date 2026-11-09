@@ -51,6 +51,24 @@
   only if it was playing, and pauses on `.oldDeviceUnavailable` (which also
   cancels a pending resume). Engine start is transactional. Verified with
   synthetic notifications in the simulator; real calls/unplugs need a device.
+- **Explicit transport state machine** (2026-11-09): the play/pause policy
+  is now the pure `TransportMachine` and `TransportDriver` (kit,
+  `Transport/`); `StandaloneAudioHost` is just its AVFoundation
+  `TransportBackend`, and `PlayerModel.isPlaying` derives from its state.
+  The driver runs events to completion, in order, publishing each
+  resulting state: a backend or state callback calling back in can't
+  interleave with an effect and its result, and a Stop after a reentrant
+  Play still wins.
+  Tests: seeded, weighted random event sequences checked against safety
+  invariants (with a per-state/event coverage floor), outcome scenarios,
+  and driver tests against a fake backend (publish order, error
+  propagation, session-queue ordering, reentrancy, cleanup); waits time
+  out into failures instead of hanging. A mutation pass planting 19 bugs
+  (including everything three adversarial Codex reviews found) catches
+  all of them. Passes on macOS and on Linux (`swift:6.1-noble`, as CI).
+  Deliberate changes: a repeated `.began`, or one during an automatic
+  resume, keeps the resume armed. Needs a device re-check (calls, Siri,
+  unplug mid-start, lock-screen toggle).
 - **Presets + saving** (2026-10-16): 8 built-ins in two groups — Noise
   (White, Pink, Brown, Blue) and Ambience (Ocean [9 s tremolo], Rain, Fan,
   Cabin; first guesses, to be tuned by ear). Violet and Grey were tried and

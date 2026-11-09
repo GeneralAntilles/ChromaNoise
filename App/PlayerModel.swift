@@ -71,21 +71,30 @@ final class PlayerModel {
     /// through `applyVolume`, so moving the slider mid-fade stays faded.
     @ObservationIgnored private var fadeGain: Float = 1
 
-    private(set) var isPlaying = false {
+    /// The host's transport state, published by the host on every change.
+    private(set) var transport: TransportMachine.State = .idle {
         didSet {
-            guard isPlaying != oldValue else { return }
-            playStartedAt = isPlaying ? .now : nil
+            guard transport.isRunning != oldValue.isRunning else { return }
+            // Cleared here, not when the start's awaiter resumes a turn later,
+            // so "Playing" never shows next to a stale start error.
+            if transport.isRunning { errorMessage = nil }
+            playStartedAt = transport.isRunning ? .now : nil
             publishNowPlaying()
         }
     }
+    var isPlaying: Bool { transport.isRunning }
     /// When the current playback started; nil while paused. The UI renders
     /// elapsed time from this with a system timer text (no app-driven ticks).
     private(set) var playStartedAt: Date?
     private(set) var errorMessage: String?
 
-    /// Sleep timer: chosen duration and its deadline, nil when off.
-    private(set) var sleepTimerMinutes: Int?
-    private(set) var sleepTimerEnd: Date?
+    /// A running sleep timer: the chosen duration and its deadline.
+    struct SleepTimer: Equatable {
+        let minutes: Int
+        let end: Date
+    }
+    /// nil when off.
+    private(set) var sleepTimer: SleepTimer?
     @ObservationIgnored private var sleepTask: Task<Void, Never>?
     /// The last stretch of a sleep timer fades master volume to silence.
     static let sleepFadeSeconds: Double = 15
@@ -110,9 +119,9 @@ final class PlayerModel {
         }
         host.apply(phonon)
         applyVolume()
-        // Interruptions and route changes start/stop the host on its own.
-        host.onRunningChange = { [weak self] running in
-            self?.isPlaying = running
+        // Every transport change, including interruptions and route changes.
+        host.onStateChange = { [weak self] state in
+            self?.transport = state
         }
         // Remote commands must answer synchronously, so Play reports success
         // once a start is under way; a failure shows in the UI's error row.
@@ -155,13 +164,12 @@ final class PlayerModel {
         sleepTask = nil
         fadeGain = 1   // undo a fade in progress
         applyVolume()
-        sleepTimerMinutes = minutes
         guard let minutes else {
-            sleepTimerEnd = nil
+            sleepTimer = nil
             return
         }
         let end = Date.now.addingTimeInterval(Double(minutes) * 60)
-        sleepTimerEnd = end
+        sleepTimer = SleepTimer(minutes: minutes, end: end)
         // The task holds `self` only weakly, per short update, never across
         // a sleep. Task.sleep(for:) uses the continuous clock, so time keeps
         // passing while the device sleeps.
@@ -188,11 +196,9 @@ final class PlayerModel {
         // Unconditional: also clears a pending interruption resume, so an
         // interruption mid-fade can't restart audio after the deadline.
         host.stop()
-        isPlaying = false
         fadeGain = 1   // ready for the next Play
         applyVolume()
-        sleepTimerMinutes = nil
-        sleepTimerEnd = nil
+        sleepTimer = nil
         sleepTask = nil
     }
 
@@ -215,17 +221,13 @@ final class PlayerModel {
     /// The on-screen button: does what its label says. A start still
     /// activating counts as playing, so a quick second tap cancels it.
     func togglePlayback() {
-        if isPlaying || host.isStarting { pause() } else { startPlaying() }
+        if isPlaying || transport.isStarting { pause() } else { startPlaying() }
     }
 
     /// Headphone/Siri toggle: an interruption that will auto-resume (or a
     /// start under way) counts as playing, so a toggle pauses for good.
     private func remoteToggle() -> Bool {
-        if host.isRunning || host.isAwaitingResume || host.isStarting {
-            pause()
-        } else {
-            startPlaying()
-        }
+        if transport == .idle { startPlaying() } else { pause() }
         return true
     }
 
@@ -247,13 +249,11 @@ final class PlayerModel {
     private func finishStart(_ start: Task<Void, Error>) async -> Bool {
         do {
             try await start.value
-            errorMessage = nil
         } catch is CancellationError {
             // Paused, stopped, interrupted or unplugged while starting.
         } catch {
             errorMessage = "Couldn't start audio: \(error.localizedDescription)"
         }
-        isPlaying = host.isRunning
         return isPlaying
     }
 
@@ -263,7 +263,6 @@ final class PlayerModel {
     func pause() {
         host.pause()
         setSleepTimer(minutes: nil)
-        isPlaying = false
     }
 
     /// Remote Stop: like pause, but also releases the audio session.

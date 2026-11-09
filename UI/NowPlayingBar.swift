@@ -116,7 +116,7 @@ struct NowPlayingBar: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "moon.zzz")
-                if let end = model.sleepTimerEnd {
+                if let end = model.sleepTimer?.end {
                     Text(timerInterval: Date.now...max(end, .now), countsDown: true)
                         .monospacedDigit()
                 } else {
@@ -129,13 +129,13 @@ struct NowPlayingBar: View {
             .contentShape(Rectangle())
         }
         .accessibilityLabel("Sleep timer")
-        .accessibilityValue(model.sleepTimerEnd.map {
-            "Ends at \($0.formatted(date: .omitted, time: .shortened))"
+        .accessibilityValue(model.sleepTimer.map {
+            "Ends at \($0.end.formatted(date: .omitted, time: .shortened))"
         } ?? "Off")
     }
 
     private var timerSelection: Binding<Int?> {
-        Binding(get: { model.sleepTimerMinutes },
+        Binding(get: { model.sleepTimer?.minutes },
                 set: { model.setSleepTimer(minutes: $0) })
     }
 }
