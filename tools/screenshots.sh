@@ -14,11 +14,11 @@
 # (1206x2622, iPhone 17), as is a 13" iPad set (2064x2752) since the app runs
 # on iPad. iPhone Duo screenshots (outer 1398x2034, inner 2007x2853) are
 # optional until April 2027 and earn the "Made for iPhone Duo" badge.
-# The Duo simulator boots folded (outer display; it doesn't rotate, so no
-# landscape shot). For the inner display, unfold it first, e.g. with duoctl
-# (github.com/skarol/duoctl, simulator-only): `duoctl open`, then
-# tools/screenshots.sh "iPhone Duo" again; those land in
-# screenshots/iPhone Duo (inner)/. The inner display stays landscape.
+# With duoctl installed (brew install skarol/tap/duoctl; simulator-only,
+# drives the hinge), the Duo is shot folded and unfolded: the cover display
+# to screenshots/iPhone Duo/ (portrait only; it doesn't rotate) and the
+# inner display to screenshots/iPhone Duo (inner)/ (landscape only; XCTest
+# can't rotate it). Without duoctl, whichever display is active is shot.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -45,34 +45,25 @@ xcodebuild build-for-testing -quiet \
     -derivedDataPath "$DERIVED" CODE_SIGNING_ALLOWED=NO
 xctestrun=$(ls "$DERIVED"/Build/Products/*.xctestrun | head -n 1)
 
-for device in "${DEVICES[@]}"; do
-    echo "==> $device"
-    udid=$(xcrun simctl list devices available -j | python3 -c "
-import json, sys
-name = sys.argv[1]
-for runtime, devs in json.load(sys.stdin)['devices'].items():
-    for d in devs:
-        if d['name'] == name:
-            print(d['udid']); sys.exit()
-sys.exit('no simulator named ' + name)" "$device")
-
-    xcrun simctl boot "$udid" 2>/dev/null || true
-    xcrun simctl bootstatus "$udid" -b >/dev/null
+# Runs the screenshot tests once on a booted simulator and exports the PNGs
+# to screenshots/<device>/ (an unfolded Duo's to "<device> (inner)/").
+shoot() {
+    local device=$1 udid=$2 pass=$3
     xcrun simctl status_bar "$udid" override \
         --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --operatorName "" \
         --batteryState charged --batteryLevel 100
 
-    result="$WORK/$udid.xcresult"
+    result="$WORK/$udid-$pass.xcresult"
     xcodebuild test-without-building -quiet \
         -xctestrun "$xctestrun" \
         -destination "id=$udid" -resultBundlePath "$result"
 
     xcrun simctl status_bar "$udid" clear
 
-    raw="$WORK/$udid-attachments"
+    raw="$WORK/$udid-$pass-attachments"
     xcrun xcresulttool export attachments --path "$result" --output-path "$raw" >/dev/null
-    pngs="$WORK/$udid-png"
+    pngs="$WORK/$udid-$pass-png"
     mkdir -p "$pngs"
     # The manifest maps exported file names to the attachment names
     # ("01-paint", ...) set in the test.
@@ -111,6 +102,33 @@ EOF
         esac
         echo "    $(basename "$f")  ${w}x${h}${ok}"
     done
+}
+
+for device in "${DEVICES[@]}"; do
+    echo "==> $device"
+    udid=$(xcrun simctl list devices available -j | python3 -c "
+import json, sys
+name = sys.argv[1]
+for runtime, devs in json.load(sys.stdin)['devices'].items():
+    for d in devs:
+        if d['name'] == name:
+            print(d['udid']); sys.exit()
+sys.exit('no simulator named ' + name)" "$device")
+
+    xcrun simctl boot "$udid" 2>/dev/null || true
+    xcrun simctl bootstatus "$udid" -b >/dev/null
+    if [[ "$device" == *Duo* ]] && command -v duoctl >/dev/null; then
+        # Both displays: folded (cover), then unfolded (inner). Ends folded,
+        # as the simulator boots.
+        duoctl -d "$udid" close >/dev/null
+        shoot "$device" "$udid" cover
+        echo "==> $device (inner)"
+        duoctl -d "$udid" open >/dev/null
+        shoot "$device" "$udid" inner
+        duoctl -d "$udid" close >/dev/null
+    else
+        shoot "$device" "$udid" main
+    fi
 done
 
 echo "Screenshots are in $OUT/"
