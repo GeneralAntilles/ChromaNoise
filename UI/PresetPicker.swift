@@ -11,8 +11,21 @@ struct PresetPicker: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \StoredPhonon.createdAt) private var saved: [StoredPhonon]
 
-    @State private var isNaming = false
-    @State private var renaming: StoredPhonon?
+    /// The name dialog on screen, if any — one at a time by construction.
+    private enum NameEditor {
+        case saving
+        case renaming(StoredPhonon)
+
+        var isSaving: Bool {
+            if case .saving = self { true } else { false }
+        }
+
+        var renamingTarget: StoredPhonon? {
+            if case .renaming(let stored) = self { stored } else { nil }
+        }
+    }
+
+    @State private var nameEditor: NameEditor?
     @State private var draftName = ""
 
     var body: some View {
@@ -35,7 +48,7 @@ struct PresetPicker: View {
                     } menu: {
                         Button("Rename", systemImage: "pencil") {
                             draftName = stored.name
-                            renaming = stored
+                            nameEditor = .renaming(stored)
                         }
                         Button("Delete", systemImage: "trash", role: .destructive) {
                             model.savedPresetDeleted(id: stored.id)
@@ -45,7 +58,7 @@ struct PresetPicker: View {
                 }
                 Button {
                     draftName = ""
-                    isNaming = true
+                    nameEditor = .saving
                 } label: {
                     // Not Label: in a flow layout's unconstrained measure it
                     // can pick a stacked style and drop the title.
@@ -76,17 +89,17 @@ struct PresetPicker: View {
         .onChange(of: saved.map(\.name)) {
             ChromaNoiseShortcuts.updateAppShortcutParameters()
         }
-        .alert("Save Sound", isPresented: $isNaming) {
+        .alert("Save Sound", isPresented: isShowing { $0.isSaving }) {
             TextField("Name", text: $draftName)
             Button("Cancel", role: .cancel) {}
             Button("Save", action: saveCurrent)
                 .disabled(trimmedDraft.isEmpty)
         }
-        .alert("Rename Sound", isPresented: isRenaming) {
+        .alert("Rename Sound", isPresented: isShowing { $0.renamingTarget != nil },
+               presenting: nameEditor?.renamingTarget) { stored in
             TextField("Name", text: $draftName)
             Button("Cancel", role: .cancel) {}
             Button("Rename") {
-                guard let stored = renaming else { return }
                 stored.name = trimmedDraft
                 model.savedPresetRenamed(id: stored.id, to: trimmedDraft)
             }
@@ -115,8 +128,10 @@ struct PresetPicker: View {
         draftName.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private var isRenaming: Binding<Bool> {
-        Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
+    /// Presents one of the name dialogs; dismissing it clears `nameEditor`.
+    private func isShowing(_ editor: @escaping (NameEditor) -> Bool) -> Binding<Bool> {
+        Binding(get: { nameEditor.map(editor) ?? false },
+                set: { if !$0 { nameEditor = nil } })
     }
 
     private func saveCurrent() {
