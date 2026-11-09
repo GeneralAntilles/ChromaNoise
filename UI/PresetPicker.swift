@@ -76,9 +76,17 @@ struct PresetPicker: View {
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Save current sound")
+                if saved.isEmpty {
+                    Text("Paint a sound, then save it here")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .frame(minHeight: 44)   // centers on the Save chip's row
+                }
             }
         }
         .padding(.vertical, 4)
+        // Tick on switching sounds; painting (selection → nil) stays silent.
+        .sensoryFeedback(.selection, trigger: model.selection) { _, new in new != nil }
         .onAppear {
             // A restored selection may point at a sound deleted since.
             if case .saved(let id) = model.selection, !saved.contains(where: { $0.id == id }) {

@@ -50,7 +50,11 @@ struct NowPlayingBar: View {
                 .font(.headline)
                 .lineLimit(1)
             Group {
-                if let started = model.playStartedAt {
+                if let end = model.sleepTimer?.end, model.isPlaying {
+                    // With a timer set, when it ends matters more than how
+                    // long it has played.
+                    Text("Stops at \(end.formatted(date: .omitted, time: .shortened))")
+                } else if let started = model.playStartedAt {
                     Text("Playing \(Text(started, style: .timer))")
                 } else {
                     Text("Paused")
@@ -128,6 +132,8 @@ struct NowPlayingBar: View {
             .frame(minHeight: 44)
             .contentShape(Rectangle())
         }
+        // Keep Off first even when the menu opens upward (iPad).
+        .menuOrder(.fixed)
         .accessibilityLabel("Sleep timer")
         .accessibilityValue(model.sleepTimer.map {
             "Ends at \($0.end.formatted(date: .omitted, time: .shortened))"

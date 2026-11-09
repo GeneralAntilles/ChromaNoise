@@ -10,13 +10,20 @@ struct EqualizerView: View {
 
     /// Band and slider value of the previous drag sample, for line-painting.
     @State private var lastTouch: (band: Int, value: Float)?
+    /// Which end of the range the finger is pinned to, if any; reaching one
+    /// plays a light haptic tick.
+    @State private var touchLimit: Limit?
+    private enum Limit { case top, bottom }
 
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.displayScale) private var displayScale
 
     private static let centers = BandMath.bandCenters()
     static let darkColors = bandPalette(forDarkBackground: true)
     private static let lightColors = bandPalette(forDarkBackground: false)
     private static let capHeight: CGFloat = 4
+    /// Level guides every 20 dB of the 60 dB range: 0, −20 and −40 dB.
+    private static let guideLevels: [CGFloat] = [1, 2.0 / 3, 1.0 / 3]
     /// Axis ticks; bands are log-spaced, so x ∝ log(f / 100 Hz).
     private static let axisTicks: [(hz: Double, label: String)] = [
         (100, "100"), (200, "200"), (500, "500"), (1000, "1k"),
@@ -36,7 +43,16 @@ struct EqualizerView: View {
     private var bars: some View {
         GeometryReader { geometry in
             let colors = colorScheme == .dark ? Self.darkColors : Self.lightColors
+            // Light mode needs a denser fill to read as bars, not a faint chart.
+            let fillOpacity = colorScheme == .dark ? 0.3 : 0.4
             Canvas { context, size in
+                // Hairline guides behind the bars give the levels a scale.
+                let line = 1 / displayScale
+                for level in Self.guideLevels {
+                    let y = min((1 - level) * size.height, size.height - line)
+                    context.fill(Path(CGRect(x: 0, y: y, width: size.width, height: line)),
+                                 with: .color(.primary.opacity(0.15)))
+                }
                 let slot = size.width / CGFloat(amps.count)
                 let gap = max(1, slot * 0.15)
                 for (i, amp) in amps.enumerated() {
@@ -47,7 +63,7 @@ struct EqualizerView: View {
                                       width: slot - gap,
                                       height: height)
                     let hue = colors[i]
-                    context.fill(Path(rect), with: .color(hue.opacity(0.3)))
+                    context.fill(Path(rect), with: .color(hue.opacity(fillOpacity)))
                     // Solid cap marks the level.
                     var cap = rect
                     cap.size.height = Self.capHeight
@@ -58,8 +74,12 @@ struct EqualizerView: View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { paint(at: $0.location, in: geometry.size) }
-                    .onEnded { _ in lastTouch = nil }
+                    .onEnded { _ in
+                        lastTouch = nil
+                        touchLimit = nil
+                    }
             )
+            .sensoryFeedback(.impact(weight: .light), trigger: touchLimit) { _, new in new != nil }
             // The canvas draws pixels only; give VoiceOver one adjustable
             // synthetic element per band, laid out over its bar.
             .accessibilityLabel("Equalizer")
@@ -159,6 +179,7 @@ struct EqualizerView: View {
             updated[band] = BandMath.sliderToAmp(value)
         }
         lastTouch = (band, value)
+        touchLimit = value == 1 ? .top : value == 0 ? .bottom : nil
         amps = updated
     }
 
