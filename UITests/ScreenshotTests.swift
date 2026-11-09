@@ -49,7 +49,7 @@ final class ScreenshotTests: XCTestCase {
         // Landscape captures come back as portrait pixels plus an orientation
         // tag; redraw so the PNG itself is upright (App Store Connect reads
         // pixels, not tags).
-        let shot = XCUIScreen.main.screenshot().image
+        let shot = screenshotOfScreen(showing: app)
         let format = UIGraphicsImageRendererFormat()
         format.scale = shot.scale
         let upright = UIGraphicsImageRenderer(size: shot.size, format: format).image { _ in
@@ -64,5 +64,23 @@ final class ScreenshotTests: XCTestCase {
         add(attachment)
         app.terminate()
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    /// The screen the app is on. XCUIScreen.main is the iPhone Duo's cover
+    /// display even while unfolded (it captures black then), so match the
+    /// app's window size instead; other devices have just the one screen.
+    @MainActor
+    private func screenshotOfScreen(showing app: XCUIApplication) -> UIImage {
+        let window = app.frame.size
+        for screen in XCUIScreen.screens {
+            let image = screen.screenshot().image
+            // The capture may be unrotated, so accept either orientation.
+            let size = image.size
+            if abs(size.width - window.width) < 1 && abs(size.height - window.height) < 1
+                || abs(size.width - window.height) < 1 && abs(size.height - window.width) < 1 {
+                return image
+            }
+        }
+        return XCUIScreen.main.screenshot().image
     }
 }
