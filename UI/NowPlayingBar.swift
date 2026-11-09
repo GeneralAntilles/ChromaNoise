@@ -20,6 +20,9 @@ struct NowPlayingBar: View {
         VStack(spacing: isShort ? 8 : 12) {
             HStack(alignment: .center) {
                 status
+                if model.isEdited {
+                    revertButton
+                }
                 Spacer()
                 sleepTimerMenu
                 moreMenu
@@ -46,9 +49,17 @@ struct NowPlayingBar: View {
 
     private var status: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(model.displayName)
-                .font(.headline)
-                .lineLimit(1)
+            HStack(spacing: 0) {
+                Text(model.displayName)
+                    .lineLimit(1)
+                if model.isEdited {
+                    // Only the name truncates; the mark always shows.
+                    Text(" · Edited")
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
+            }
+            .font(.headline)
             Group {
                 if let end = model.sleepTimer?.end, model.isPlaying {
                     // With a timer set, when it ends matters more than how
@@ -64,6 +75,17 @@ struct NowPlayingBar: View {
             .foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Drops edits to the selected sound; shown only while it's edited.
+    private var revertButton: some View {
+        Button(action: model.revert) {
+            Image(systemName: "arrow.uturn.backward.circle")
+                .font(.title3)
+                .frame(width: 44, height: 44)   // full touch target
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("Revert to \(model.displayName)")
     }
 
     // Always on screen, unlike the scrolling form above.

@@ -19,6 +19,11 @@ final class StoredPhonon {
         self.data = try JSONEncoder().encode(phonon)
     }
 
+    /// Overwrites the stored sound, keeping its name, id and position.
+    func update(with phonon: Phonon) throws {
+        data = try JSONEncoder().encode(phonon)
+    }
+
     /// The saved sound, named by the (renameable) `name` column.
     var phonon: Phonon? {
         guard var p = try? JSONDecoder().decode(Phonon.self, from: data) else { return nil }

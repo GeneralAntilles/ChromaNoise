@@ -91,8 +91,8 @@ struct RootView: View {
     }
 
     @ViewBuilder private var controlSections: some View {
-        // Selecting loads the preset's bars; painting deselects
-        // (the phonon no longer matches any preset).
+        // Selecting loads the preset's bars; painting keeps the selection,
+        // marked as edited.
         Section {
             PresetPicker(model: model)
         }

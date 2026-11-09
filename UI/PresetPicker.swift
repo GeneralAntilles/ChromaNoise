@@ -4,7 +4,8 @@ import SwiftUI
 
 /// All presets, visible at once as wrapping chip groups: the built-in
 /// categories, then the user's saved sounds (long-press to rename or
-/// delete) with a Save chip that stores the current sound under a new name.
+/// delete) with a Save chip that stores the current sound under a new name,
+/// and, while a saved sound is edited, an Update chip that overwrites it.
 struct PresetPicker: View {
     let model: PlayerModel
 
@@ -33,15 +34,16 @@ struct PresetPicker: View {
             ForEach(model.presetGroups, id: \.name) { group in
                 section(group.name) {
                     ForEach(group.phonons, id: \.name) { preset in
-                        chip(preset.name, selected: model.selection == .builtIn(name: preset.name)) {
-                            model.load(preset, as: .builtIn(name: preset.name))
+                        let selection = PlayerModel.PresetSelection.builtIn(name: preset.name)
+                        Chip(title: preset.name, state: chipState(selection)) {
+                            model.load(preset, as: selection)
                         }
                     }
                 }
             }
             section("My Sounds") {
                 ForEach(saved) { stored in
-                    Chip(title: stored.name, selected: model.selection == .saved(id: stored.id)) {
+                    Chip(title: stored.name, state: chipState(.saved(id: stored.id))) {
                         if let phonon = stored.phonon {
                             model.load(phonon, as: .saved(id: stored.id))
                         }
@@ -53,29 +55,21 @@ struct PresetPicker: View {
                         Button("Delete", systemImage: "trash", role: .destructive) {
                             model.savedPresetDeleted(id: stored.id)
                             context.delete(stored)
+                            persist()
                         }
                     }
                 }
-                Button {
+                if let edited = editedSavedSound {
+                    actionChip("Update \u{201C}\(edited.name)\u{201D}", systemImage: "square.and.arrow.down") {
+                        update(edited)
+                    }
+                    .accessibilityLabel("Update \(edited.name) with the edits")
+                }
+                actionChip(editedSavedSound == nil ? "Save" : "Save as New", systemImage: "plus") {
                     draftName = ""
                     nameEditor = .saving
-                } label: {
-                    // Not Label: in a flow layout's unconstrained measure it
-                    // can pick a stacked style and drop the title.
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Save")
-                    }
-                        .font(.subheadline.weight(.medium))
-                        .lineLimit(1)
-                        .fixedSize()
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 7)
-                        .overlay(Capsule().strokeBorder(.tint, lineWidth: 1))
-                        .frame(minHeight: 44)   // full-size hit target, compact capsule
-                        .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Save current sound")
+                .accessibilityLabel("Save current sound as new")
                 if saved.isEmpty {
                     Text("Paint a sound, then save it here")
                         .font(.footnote)
@@ -85,7 +79,7 @@ struct PresetPicker: View {
             }
         }
         .padding(.vertical, 4)
-        // Tick on switching sounds; painting (selection → nil) stays silent.
+        // Tick on switching sounds; a deleted sound's deselection stays silent.
         .sensoryFeedback(.selection, trigger: model.selection) { _, new in new != nil }
         .onAppear {
             // A restored selection may point at a sound deleted since.
@@ -109,6 +103,7 @@ struct PresetPicker: View {
             Button("Cancel", role: .cancel) {}
             Button("Rename") {
                 stored.name = trimmedDraft
+                persist()
                 model.savedPresetRenamed(id: stored.id, to: trimmedDraft)
             }
             .disabled(trimmedDraft.isEmpty)
@@ -128,8 +123,50 @@ struct PresetPicker: View {
         }
     }
 
-    private func chip(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
-        Chip(title: title, selected: selected, action: action)
+    private func chipState(_ selection: PlayerModel.PresetSelection) -> ChipState {
+        guard model.selection == selection else { return .normal }
+        return model.isEdited ? .edited : .selected
+    }
+
+    /// The selected saved sound, if it has unsaved edits.
+    private var editedSavedSound: StoredPhonon? {
+        guard model.isEdited, case .saved(let id) = model.selection else { return nil }
+        return saved.first { $0.id == id }
+    }
+
+    /// An outlined capsule for an action, as opposed to a sound.
+    private func actionChip(_ title: String, systemImage: String,
+                            action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            // Not Label: in a flow layout's unconstrained measure it
+            // can pick a stacked style and drop the title.
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                Text(title)
+            }
+                .font(.subheadline.weight(.medium))
+                .lineLimit(1)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .overlay(Capsule().strokeBorder(.tint, lineWidth: 1))
+                .frame(minHeight: 44)   // full-size hit target, compact capsule
+                .contentShape(Rectangle())
+        }
+        // Not the default style: in a Form row that makes a tap anywhere in
+        // the row fire every such button (Update would also open Save).
+        .buttonStyle(.borderless)
+    }
+
+    private func update(_ stored: StoredPhonon) {
+        guard (try? stored.update(with: model.phonon)) != nil else { return }
+        persist()
+        model.savedPresetUpdated(id: stored.id)
+    }
+
+    /// Writes changes now: autosave is deferred, and a kill before it runs
+    /// would lose the latest save, rename, update or delete.
+    private func persist() {
+        try? context.save()
     }
 
     private var trimmedDraft: String {
@@ -148,6 +185,7 @@ struct PresetPicker: View {
         phonon.name = name
         guard !name.isEmpty, let stored = try? StoredPhonon(phonon: phonon, name: name) else { return }
         context.insert(stored)
+        persist()
         model.load(phonon, as: .saved(id: stored.id))
     }
 }
@@ -158,14 +196,14 @@ struct PresetPicker: View {
 /// `.contextMenu` would instead lift the whole Form row, every chip in it.)
 private struct Chip<MenuItems: View>: View {
     let title: String
-    let selected: Bool
+    let state: ChipState
     let action: () -> Void
     let menu: MenuItems?
 
-    init(title: String, selected: Bool, action: @escaping () -> Void,
+    init(title: String, state: ChipState, action: @escaping () -> Void,
          @ViewBuilder menu: () -> MenuItems) {
         self.title = title
-        self.selected = selected
+        self.state = state
         self.action = action
         self.menu = menu()
     }
@@ -186,7 +224,8 @@ private struct Chip<MenuItems: View>: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityAddTraits(state == .normal ? [] : .isSelected)
+        .accessibilityValue(state == .edited ? "Edited" : "")
     }
 
     private var label: some View {
@@ -195,18 +234,48 @@ private struct Chip<MenuItems: View>: View {
             .lineLimit(1)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .foregroundStyle(selected ? Color.white : Color.primary)
-            .background(selected ? AnyShapeStyle(.tint) : AnyShapeStyle(.fill.tertiary),
-                        in: Capsule())
+            .foregroundStyle(foreground)
+            .background(background, in: Capsule())
+            // Edited: still marked as the source, but lighter than selected.
+            .overlay {
+                if state == .edited {
+                    Capsule().strokeBorder(.tint, lineWidth: 1)
+                }
+            }
             .frame(minHeight: 44)   // full-size hit target, compact capsule
             .contentShape(Rectangle())
     }
+
+    private var foreground: AnyShapeStyle {
+        switch state {
+        case .normal: AnyShapeStyle(.primary)
+        case .selected: AnyShapeStyle(.white)
+        case .edited: AnyShapeStyle(.tint)
+        }
+    }
+
+    private var background: AnyShapeStyle {
+        switch state {
+        case .normal: AnyShapeStyle(.fill.tertiary)
+        case .selected: AnyShapeStyle(.tint)
+        case .edited: AnyShapeStyle(.tint.opacity(0.12))
+        }
+    }
+}
+
+/// How a preset chip relates to the current sound.
+private enum ChipState {
+    case normal
+    /// The current sound, unchanged.
+    case selected
+    /// The current sound's source, since painted over or reshaped.
+    case edited
 }
 
 extension Chip where MenuItems == EmptyView {
-    init(title: String, selected: Bool, action: @escaping () -> Void) {
+    init(title: String, state: ChipState, action: @escaping () -> Void) {
         self.title = title
-        self.selected = selected
+        self.state = state
         self.action = action
         self.menu = nil
     }

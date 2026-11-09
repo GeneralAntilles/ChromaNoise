@@ -26,23 +26,32 @@ final class PlayerModel {
         case saved(id: UUID)
     }
 
-    /// The preset the current phonon came from; nil once painted over.
+    /// The preset the current phonon came from, edited or not; nil for a
+    /// sound with no preset behind it (its saved sound was deleted).
     private(set) var selection: PresetSelection? {
         didSet { publishNowPlaying() }
     }
 
-    /// The current phonon's 32 band amplitudes. Setting this (the painter)
-    /// edits the live phonon, so it no longer matches its preset.
-    var bandAmps: [Float] {
-        get { phonon.amps }
-        set {
-            phonon.amps = newValue
-            selection = nil
-        }
+    /// The selected preset's sound as loaded, for Revert and the Edited
+    /// mark; nil when there is no selection.
+    private(set) var loadedPhonon: Phonon?
+
+    /// Whether the sound has been painted or reshaped since it was loaded.
+    var isEdited: Bool {
+        guard let loadedPhonon else { return false }
+        return phonon.amps != loadedPhonon.amps
+            || phonon.tremoloDepth != loadedPhonon.tremoloDepth
+            || phonon.tremoloPeriodSeconds != loadedPhonon.tremoloPeriodSeconds
     }
 
-    /// Swell (tremolo) depth, 0 = off. Like painting, editing it means the
-    /// sound no longer matches its preset.
+    /// The current phonon's 32 band amplitudes. Setting this (the painter)
+    /// edits the live phonon; the selection stays, marked as edited.
+    var bandAmps: [Float] {
+        get { phonon.amps }
+        set { phonon.amps = newValue }
+    }
+
+    /// Swell (tremolo) depth, 0 = off.
     var tremoloDepth: Float {
         get { phonon.tremoloDepth }
         set {
@@ -52,16 +61,12 @@ final class PlayerModel {
                 phonon.tremoloPeriodSeconds = 8
             }
             phonon.tremoloDepth = newValue
-            selection = nil
         }
     }
 
     var tremoloPeriodSeconds: Float {
         get { phonon.tremoloPeriodSeconds }
-        set {
-            phonon.tremoloPeriodSeconds = newValue
-            selection = nil
-        }
+        set { phonon.tremoloPeriodSeconds = newValue }
     }
 
     var masterVolume: Float = 0.7 {
@@ -110,12 +115,15 @@ final class PlayerModel {
                 selection = nil
             } else {
                 selection = saved.selection
+                // States saved before edits kept their selection were unedited.
+                loadedPhonon = saved.selection == nil ? nil : saved.loadedPhonon ?? saved.phonon
             }
             masterVolume = saved.masterVolume
         } else {
             let initial = presets.first { $0.name == "Brown" } ?? presets[0]
             phonon = Self.normalized(initial)
             selection = .builtIn(name: initial.name)
+            loadedPhonon = phonon
         }
         host.apply(phonon)
         applyVolume()
@@ -138,7 +146,21 @@ final class PlayerModel {
     /// preset's stored `masterVolume` is ignored.
     func load(_ preset: Phonon, as selection: PresetSelection) {
         phonon = Self.normalized(preset)
+        loadedPhonon = phonon
         self.selection = selection
+    }
+
+    /// Back to the selected preset as loaded, dropping the edits.
+    func revert() {
+        guard let loadedPhonon else { return }
+        phonon = loadedPhonon
+    }
+
+    /// The current sound was written over its saved preset: it is the new
+    /// baseline for Revert and no longer counts as edited.
+    func savedPresetUpdated(id: UUID) {
+        guard selection == .saved(id: id) else { return }
+        loadedPhonon = phonon
     }
 
     /// What to call the current sound in the UI.
@@ -148,11 +170,15 @@ final class PlayerModel {
 
     /// The sound keeps playing; it just no longer matches a stored preset.
     func savedPresetDeleted(id: UUID) {
-        if selection == .saved(id: id) { selection = nil }
+        guard selection == .saved(id: id) else { return }
+        selection = nil
+        loadedPhonon = nil
     }
 
     func savedPresetRenamed(id: UUID, to name: String) {
-        if selection == .saved(id: id) { phonon.name = name }
+        guard selection == .saved(id: id) else { return }
+        phonon.name = name
+        loadedPhonon?.name = name
     }
 
     // MARK: sleep timer
@@ -283,6 +309,8 @@ final class PlayerModel {
     private struct SavedState: Codable {
         var phonon: Phonon
         var selection: PresetSelection?
+        /// Absent in states saved before edits kept their selection.
+        var loadedPhonon: Phonon?
         var masterVolume: Float
     }
 
@@ -290,7 +318,8 @@ final class PlayerModel {
 
     func saveState() {
         guard !Self.isScreenshotRun else { return }   // keep the user's last sound
-        let state = SavedState(phonon: phonon, selection: selection, masterVolume: masterVolume)
+        let state = SavedState(phonon: phonon, selection: selection,
+                               loadedPhonon: loadedPhonon, masterVolume: masterVolume)
         if let data = try? JSONEncoder().encode(state) {
             UserDefaults.standard.set(data, forKey: Self.savedStateKey)
         }
@@ -300,11 +329,18 @@ final class PlayerModel {
         guard let data = UserDefaults.standard.data(forKey: savedStateKey),
               var state = try? JSONDecoder().decode(SavedState.self, from: data),
               // Decoding bypasses Phonon's init checks; validate before use.
-              state.phonon.amps.count == DSPConstants.bandCount,
-              state.phonon.amps.allSatisfy({ $0.isFinite && $0 >= 0 })
+              isPlayable(state.phonon)
         else { return nil }
+        if let loaded = state.loadedPhonon, !isPlayable(loaded) {
+            state.loadedPhonon = nil
+        }
         state.masterVolume = min(max(state.masterVolume, 0), 1)
         return state
+    }
+
+    private static func isPlayable(_ phonon: Phonon) -> Bool {
+        phonon.amps.count == DSPConstants.bandCount
+            && phonon.amps.allSatisfy { $0.isFinite && $0 >= 0 }
     }
 
     /// Built-ins are stored unnormalized (Blue peaks near 14×), but the
