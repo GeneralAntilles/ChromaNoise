@@ -23,6 +23,9 @@ struct PlayerModelTests {
         let before = host.volumes.count
         let step = Duration.seconds(PlayerModel.sleepFadeSeconds) / 60
         for _ in 0..<60 {
+            // The timer measures its next step from when it goes back to
+            // sleep, so only move the clock once it has.
+            await waitFor("the timer to sleep again") { clock.sleeperCount == 1 }
             let seen = host.volumes.count
             clock.advance(by: step)
             await waitFor("a fade step") { host.volumes.count > seen }
