@@ -11,6 +11,8 @@ read its Status section first.
   ever (enforced by `HostAgnosticismTests`) so it can drop into an AUv3 later.
 - `Audio/`, `App/`, `UI/` — the iOS app target. `StandaloneAudioHost` is the
   only place that touches `AVAudioSession` / `AVAudioEngine`.
+- `AppTests/` — app-level unit tests: `PlayerModel` against a fake
+  `AudioHost` and a hand-moved clock (no audio stack).
 - `tools/reference_dsp.py` — numpy golden reference for the DSP. If Swift and
   Python disagree, Python wins until proven otherwise.
 - `project.yml` — XcodeGen spec. `ChromaNoise.xcodeproj` is generated and
@@ -26,6 +28,11 @@ open ChromaNoise.xcodeproj
 # App build, no signing needed for the simulator
 xcodebuild build -project ChromaNoise.xcodeproj -scheme ChromaNoise \
   -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO
+
+# App tests (PlayerModel: sleep timer, starting, persistence)
+xcodebuild test -project ChromaNoise.xcodeproj -scheme ChromaNoise \
+  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -only-testing:ChromaNoiseTests CODE_SIGNING_ALLOWED=NO
 
 # Kit tests (fast; release because the synthesis tests push ~1000 FFTs)
 (cd Packages/ChromaNoiseKit && swift test -c release)

@@ -112,17 +112,18 @@
     the resume's outcome (`PlayerModel.finishStart`), so Siri no longer
     reports a failure while audio starts.
   - `PlayerModel` takes its host (`AudioHost` protocol), clock and
-    defaults suite through `init`, ready for tests.
+    defaults suite through `init`. `AppTests/` (target `ChromaNoiseTests`,
+    16 tests, in CI) covers the sleep timer, starting (including the
+    interruption-resume Play) and last-sound persistence.
+  - TestFlight build 46 carries everything above.
   - CI also runs the kit tests on macOS, the only place the vDSP FFT runs.
 - **Open from that review**:
-  - No app test target yet: the sleep timer, persistence and the
-    interruption-resume Play path above are still untested.
   - Unplugging while playing: `.configurationChanged` restarts the engine
     at once and `.oldDeviceUnavailable` arrives separately, so a restart
     on the speaker may be audible before the stop. Check on device.
   - Saved sounds: Delete has no confirmation; `context.save()` errors are
     dropped; a store that fails to open is a `fatalError` at launch.
-  - Device checks: locked screen for 30 min with no underruns logged
+  - Device checks (build 46): locked screen for 30 min with no underruns logged
     after the first start; the fade curve by ear; a 96 kHz DAC if one is
     to hand; a media-services reset (Settings > Developer > Reset Media
     Services).

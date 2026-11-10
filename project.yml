@@ -60,6 +60,18 @@ targets:
         ENABLE_PREVIEWS: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+  # App-level unit tests, hosted in the app: PlayerModel against a fake host.
+  ChromaNoiseTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AppTests
+    dependencies:
+      - target: ChromaNoise
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.talkabel.ChromaNoiseTests
+        GENERATE_INFOPLIST_FILE: YES
   # App Store screenshots only (tools/screenshots.sh); not part of CI.
   ChromaNoiseUITests:
     type: bundle.ui-testing
@@ -78,11 +90,13 @@ schemes:
     build:
       targets:
         ChromaNoise: all
+        ChromaNoiseTests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
+        - ChromaNoiseTests
         - package: ChromaNoiseKit/ChromaNoiseKitTests
   Screenshots:
     build:

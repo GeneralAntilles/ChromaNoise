@@ -52,3 +52,11 @@ jobs:
           -scheme ChromaNoise
           -destination 'generic/platform=iOS Simulator'
           CODE_SIGNING_ALLOWED=NO
+      # App-level unit tests (AppTests/), hosted in the app.
+      - run: >
+          xcodebuild test
+          -project ChromaNoise.xcodeproj
+          -scheme ChromaNoise
+          -destination 'platform=iOS Simulator,name=iPhone 16'
+          -only-testing:ChromaNoiseTests
+          CODE_SIGNING_ALLOWED=NO
