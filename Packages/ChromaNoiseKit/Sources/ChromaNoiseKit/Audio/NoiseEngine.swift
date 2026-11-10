@@ -22,17 +22,24 @@ public final class NoiseEngine {
         /// Frames the worker keeps queued ahead of the render thread. This, not
         /// the ring capacity, sets parameter-to-ear latency.
         let targetLead: Int
-        let left = NoiseStream(seed: 0xC0FFEE)
-        let right = NoiseStream(seed: 0xB0BA)
+        /// STFT frame size and hop for this rate (larger above 48 kHz).
+        let fftSize: Int
+        let hop: Int
+        let left: NoiseStream
+        let right: NoiseStream
         let running = ManagedAtomic<Bool>(true)
         let finished = DispatchSemaphore(value: 0)
 
         init(sampleRate: Double, maxFrames: Int) {
             self.sampleRate = sampleRate
+            self.fftSize = DSPConstants.fftSize(forSampleRate: sampleRate)
+            self.hop = fftSize / 4
+            self.left = NoiseStream(seed: 0xC0FFEE, fftSize: fftSize)
+            self.right = NoiseStream(seed: 0xB0BA, fftSize: fftSize)
             // Two hops of cushion past the largest host pull: the worker has
             // ≥2 hops (~42 ms) to refill after any callback.
-            self.targetLead = DSPConstants.hop * 2 + maxFrames
-            self.ring = RenderRingBuffer(capacityFrames: targetLead + DSPConstants.hop)
+            self.targetLead = hop * 2 + maxFrames
+            self.ring = RenderRingBuffer(capacityFrames: targetLead + hop)
         }
     }
 
@@ -79,7 +86,14 @@ public final class NoiseEngine {
         thread.start()
     }
 
-    /// Stops the worker and waits for it to exit (at most one hop of work).
+    /// Render calls in the current session that ran out of queued audio and
+    /// were padded with silence; 0 when not prepared. The first callbacks
+    /// after `prepare` can count while the worker fills the ring. Call from
+    /// the thread that calls `prepare`/`teardown`.
+    public var underrunCount: Int { session?.ring.underrunCount ?? 0 }
+
+    /// Stops the worker and waits for it to exit (at most one hop of work
+    /// plus half a hop of idle sleep).
     public func teardown() {
         guard let s = session else { return }
         renderRing = nil
@@ -133,16 +147,20 @@ public final class NoiseEngine {
     // MARK: worker
 
     private static func workerLoop(_ s: Session, _ params: Parameters) {
-        let hop = DSPConstants.hop
+        let hop = s.hop
         var outL = [Float](repeating: 0, count: hop)
         var outR = [Float](repeating: 0, count: hop)
         var envelope = [Float](repeating: 1, count: hop)
         var tremolo = Tremolo()
         var lastScale: Float?
+        // With the lead full, the ring holds two hops beyond the largest
+        // single pull, so sleeping half a hop still leaves 1.5 hops of
+        // cushion (and wakes ~10 ms apart at 48 kHz instead of polling).
+        let idleSleep = 0.5 * Double(hop) / s.sampleRate
 
         while s.running.load(ordering: .acquiring) {
             guard s.ring.availableToRead < s.targetLead else {
-                Thread.sleep(forTimeInterval: 0.002)
+                Thread.sleep(forTimeInterval: idleSleep)
                 continue
             }
 
@@ -155,7 +173,8 @@ public final class NoiseEngine {
             params.lock.unlock()
 
             if let newAmps {
-                let gain = GainLUT.build(bandAmps: newAmps, sampleRate: s.sampleRate)
+                let gain = GainLUT.build(bandAmps: newAmps, sampleRate: s.sampleRate,
+                                         fftSize: s.fftSize)
                 s.left.gain = gain
                 s.right.gain = gain
             }

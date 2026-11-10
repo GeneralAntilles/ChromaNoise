@@ -7,8 +7,9 @@ import Foundation
 /// blends 4 windowed frames, so a gain step inherently crossfades over ~4 hops
 /// (~85 ms @ 48 kHz).
 public final class NoiseStream {
-    private let n = DSPConstants.fftSize
-    private let hop = DSPConstants.hop
+    private let n: Int
+    /// Samples produced per `processHop`: a quarter of the frame.
+    public let hop: Int
     private let fft: RealFFT
     private let window: [Float]
     private var noise: WhiteNoise
@@ -23,8 +24,12 @@ public final class NoiseStream {
     /// worker thread between hops; never touched by the render thread.
     public var gain: [Float]
 
-    public init(seed: UInt64, fft: RealFFT? = nil) {
-        self.fft = fft ?? makeRealFFT(size: DSPConstants.fftSize)
+    /// `fftSize` is the frame size, `DSPConstants.fftSize(forSampleRate:)`
+    /// for the rate the stream plays at.
+    public init(seed: UInt64, fftSize: Int = DSPConstants.fftSize, fft: RealFFT? = nil) {
+        self.n = fftSize
+        self.hop = fftSize / 4
+        self.fft = fft ?? makeRealFFT(size: fftSize)
         precondition(self.fft.size == n)
         self.window = Windows.periodicHann(n)
         self.noise = WhiteNoise(seed: seed)

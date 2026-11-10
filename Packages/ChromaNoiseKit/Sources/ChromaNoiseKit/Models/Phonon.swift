@@ -26,6 +26,14 @@ public struct Phonon: Codable, Hashable, Sendable {
         self.tremoloDepth = tremoloDepth
     }
 
+    /// Whether the engine can take this phonon: 32 finite, non-negative
+    /// bands. Decoding bypasses `init`'s check, so test decoded phonons
+    /// with this before use.
+    public var isPlayable: Bool {
+        amps.count == DSPConstants.bandCount
+            && amps.allSatisfy { $0.isFinite && $0 >= 0 }
+    }
+
     /// Convert a legacy ChromaDoze period slider slot (0–53) to seconds,
     /// for importing upstream preset JSON. Piecewise mapping per upstream.
     public static func legacyPeriodSeconds(slot: Int) -> Float {

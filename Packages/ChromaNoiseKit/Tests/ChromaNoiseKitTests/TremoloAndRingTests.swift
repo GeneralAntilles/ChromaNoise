@@ -40,6 +40,7 @@ final class TremoloAndRingTests: XCTestCase {
         // Underrun tail is silence, not garbage.
         XCTAssertTrue(outL[1000...].allSatisfy { $0 == 0 })
         XCTAssertEqual(ring.availableToRead, 0)
+        XCTAssertEqual(ring.underrunCount, 1)
     }
 
     func testRingBufferWrapAround() {
@@ -57,5 +58,6 @@ final class TremoloAndRingTests: XCTestCase {
             XCTAssertEqual(got, 1536)
             XCTAssertTrue(outL.allSatisfy { $0 == Float(round) }, "round \(round)")
         }
+        XCTAssertEqual(ring.underrunCount, 0)
     }
 }

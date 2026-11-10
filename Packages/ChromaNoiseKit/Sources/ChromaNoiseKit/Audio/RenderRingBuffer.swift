@@ -12,6 +12,10 @@ public final class RenderRingBuffer {
     private let right: UnsafeMutablePointer<Float>
     private let head = ManagedAtomic<Int>(0)   // written frames (producer)
     private let tail = ManagedAtomic<Int>(0)   // consumed frames (consumer)
+    private let underruns = ManagedAtomic<Int>(0)
+
+    /// Reads that came up short and were padded with silence. Any thread.
+    public var underrunCount: Int { underruns.load(ordering: .relaxed) }
 
     public init(capacityFrames: Int) {
         var cap = 1
@@ -70,6 +74,7 @@ public final class RenderRingBuffer {
             dstR[i] = right[idx]
         }
         if toRead < count {
+            underruns.wrappingIncrement(ordering: .relaxed)
             for i in toRead..<count {
                 dstL[i] = 0
                 dstR[i] = 0

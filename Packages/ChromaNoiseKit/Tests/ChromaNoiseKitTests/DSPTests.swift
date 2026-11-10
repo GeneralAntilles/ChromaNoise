@@ -127,10 +127,80 @@ final class DSPTests: XCTestCase {
         }
     }
 
+    /// Mirrors the reference's "every band has a bin" check: the frame grows
+    /// with the output rate, so no band goes silent on a 96 or 192 kHz DAC
+    /// (at a fixed 4096, band 1 has no bin at 96 kHz; bands 0, 1, 4 at 192).
+    func testEveryBandHasABinAtEveryOutputRate() {
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 16000), 4096)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 44100), 4096)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 48000), 4096)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 88200), 8192)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 96000), 8192)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 176400), 16384)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: 192000), 16384)
+        XCTAssertEqual(DSPConstants.fftSize(forSampleRate: .infinity), 65536, "capped")
+
+        for rate in [44100.0, 48000, 88200, 96000, 176400, 192000] {
+            let bmap = BandMath.bandOfBin(sampleRate: rate,
+                                          fftSize: DSPConstants.fftSize(forSampleRate: rate))
+            let missing = (0..<DSPConstants.bandCount).filter { !bmap.contains($0) }
+            XCTAssertEqual(missing, [], "bands without a bin at \(rate) Hz")
+
+            // A sound that is only such a band must still make noise.
+            var amps = [Float](repeating: 0, count: DSPConstants.bandCount)
+            amps[1] = 1
+            let gain = GainLUT.build(bandAmps: amps, sampleRate: rate)
+            XCTAssertTrue(gain.contains { $0 > 0 }, "band 1 alone is silent at \(rate) Hz")
+        }
+        let fixed = BandMath.bandOfBin(sampleRate: 96000, fftSize: DSPConstants.fftSize)
+        XCTAssertFalse(fixed.contains(1), "the case this guards against")
+    }
+
+    /// The streaming path at a doubled frame: unity gain in, stationary
+    /// noise at the same level out, a hop at a time.
+    func testStreamRunsAtLargerFrameSizes() {
+        for rate in [96000.0, 192000] {
+            let n = DSPConstants.fftSize(forSampleRate: rate)
+            let stream = NoiseStream(seed: 5, fftSize: n)
+            XCTAssertEqual(stream.hop, n / 4)
+            stream.gain = [Float](repeating: 1, count: n / 2 + 1)
+            var hop = [Float](repeating: 0, count: stream.hop)
+            var out = [Float]()
+            for _ in 0..<12 {
+                stream.processHop(into: &hop)
+                out.append(contentsOf: hop)
+            }
+            // Past the first frame, unity gain reconstructs the white noise:
+            // uniform in ±1, so RMS 1/√3.
+            let steady = out.dropFirst(n)
+            let rms = (steady.reduce(Float(0)) { $0 + $1 * $1 } / Float(steady.count)).squareRoot()
+            XCTAssertEqual(rms, 1 / Float(3).squareRoot(), accuracy: 0.02, "at \(rate) Hz")
+        }
+    }
+
     func testAllZeroSpectrumYieldsSilenceNotNaN() {
         let gain = GainLUT.build(bandAmps: [Float](repeating: 0, count: 32),
                                  sampleRate: TestSupport.sampleRate)
         XCTAssertTrue(gain.allSatisfy { $0 == 0 && !$0.isNaN })
+    }
+
+    /// Decoding skips `Phonon.init`'s band-count check; `isPlayable` is the
+    /// gate for decoded phonons.
+    func testIsPlayableRejectsMalformedDecodedPhonons() throws {
+        XCTAssertTrue(Phonon(name: "ok", amps: Presets.pink()).isPlayable)
+
+        func decoded(amps: String) throws -> Phonon {
+            let json = #"{"name":"x","amps":\#(amps),"masterVolume":0.7,"#
+                + #""tremoloPeriodSeconds":1,"tremoloDepth":0}"#
+            return try JSONDecoder().decode(Phonon.self, from: Data(json.utf8))
+        }
+        XCTAssertFalse(try decoded(amps: "[1,1,1]").isPlayable, "wrong band count")
+        let negative = "[" + (["-1"] + [String](repeating: "1", count: 31)).joined(separator: ",") + "]"
+        XCTAssertFalse(try decoded(amps: negative).isPlayable, "negative band")
+
+        var infinite = Phonon(name: "inf", amps: Presets.white())
+        infinite.amps[3] = .infinity
+        XCTAssertFalse(infinite.isPlayable, "non-finite band")
     }
 
     func testLegacyPeriodMapping() {

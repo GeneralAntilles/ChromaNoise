@@ -46,7 +46,8 @@ final class EngineLifecycleTests: XCTestCase {
 
     func testRepreparingAndTearingDownIsCleanAndSilent() {
         let engine = NoiseEngine()
-        for rate in [48000.0, 44100.0, 16000.0, 48000.0] {
+        // 96 and 192 kHz run a larger frame and hop.
+        for rate in [48000.0, 44100.0, 16000.0, 96000.0, 192000.0, 48000.0] {
             engine.prepare(sampleRate: rate, maxFrames: 1024)
             let out = pullUntilAudible(engine, frames: 1024)
             XCTAssertTrue(out.l.contains { $0 != 0 }, "no audio at \(rate) Hz")
@@ -66,6 +67,29 @@ final class EngineLifecycleTests: XCTestCase {
         }
         XCTAssertNil(weakEngine, "the worker thread must not retain the engine")
     }
+
+    #if canImport(Accelerate)
+    /// The worker sleeps between refills; at the host's worst case (4096-frame
+    /// pulls, as with the screen locked) it must still keep the ring fed.
+    /// Realtime-paced, so only where the fast FFT makes timing dependable.
+    func testWorkerKeepsUpWithLargestPullsAtRealtimePace() {
+        let frames = 4096
+        let engine = NoiseEngine()
+        engine.prepare(sampleRate: 48000, maxFrames: frames)
+        defer { engine.teardown() }
+        _ = pullUntilAudible(engine, frames: frames)
+        Thread.sleep(forTimeInterval: 0.2)   // let the lead fill
+        let before = engine.underrunCount
+
+        let period = Double(frames) / 48000
+        let start = Date()
+        for i in 1...24 {   // ~2 s of audio
+            _ = pull(engine, frames: frames)
+            Thread.sleep(until: start.addingTimeInterval(Double(i) * period))
+        }
+        XCTAssertEqual(engine.underrunCount, before, "ring underran at realtime pace")
+    }
+    #endif
 
     func testZeroMasterVolumeIsSilentAfterRamp() {
         let engine = NoiseEngine()

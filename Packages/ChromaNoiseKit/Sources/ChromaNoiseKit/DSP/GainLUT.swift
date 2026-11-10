@@ -1,7 +1,8 @@
 import Foundation
 
 public enum GainLUT {
-    /// Per-rfft-bin gain from 32 post-curve band amplitudes.
+    /// Per-rfft-bin gain from 32 post-curve band amplitudes, for the frame
+    /// size the engine uses at `sampleRate` unless `fftSize` says otherwise.
     ///
     /// Flat fill within each band. Constant-power normalization rescales so
     /// Σ gain² over active bins equals the active-bin count — an all-ones
@@ -10,10 +11,11 @@ public enum GainLUT {
     public static func build(
         bandAmps: [Float],
         sampleRate: Double,
-        fftSize n: Int = DSPConstants.fftSize,
+        fftSize: Int? = nil,
         normalize: Bool = true
     ) -> [Float] {
         precondition(bandAmps.count == DSPConstants.bandCount)
+        let n = fftSize ?? DSPConstants.fftSize(forSampleRate: sampleRate)
         let bmap = BandMath.bandOfBin(sampleRate: sampleRate, fftSize: n)
         var gain = [Float](repeating: 0, count: n / 2 + 1)
         var activeBins = 0

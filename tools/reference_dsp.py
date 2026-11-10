@@ -38,6 +38,15 @@ def band_of_bin(sr, n):
         band[mask] = b
     return band
 
+def fft_size_for(sr):
+    """FFT size for an output rate: N, doubled until bins are no wider than
+    at 48 kHz (11.7 Hz). The narrowest band is 18 Hz wide, so every band keeps
+    a bin at 96 and 192 kHz. The hop stays a quarter of it. Capped at 16 N."""
+    n = N
+    while sr / n > 48000 / N and n < 16 * N:
+        n *= 2
+    return n
+
 def slider_to_amp(v):
     """v in [0,1] -> amplitude, 60 dB exponential. v=0 -> 0.001, v=1 -> 1.0."""
     return 0.001 * np.power(1000.0, v)
@@ -272,6 +281,19 @@ def main():
     ok &= check("tremolo depth", abs(env.min() - 0.4) < 1e-3 and abs(env.max() - 1.0) < 1e-3,
                 f"[{env.min():.4f},{env.max():.4f}]")
     ok &= check("tremolo bypass", np.all(tremolo_envelope(100, 1.0, 0.0) == 1.0))
+
+    # 15. Every band has an FFT bin at every output rate (a fixed N = 4096
+    # leaves band 1 empty at 96 kHz and bands 0, 1, 4 empty at 192 kHz).
+    sizes = {sr: fft_size_for(sr) for sr in (16000, 44100, 48000, 88200, 96000, 176400, 192000)}
+    ok &= check("fft size per rate",
+                sizes == {16000: 4096, 44100: 4096, 48000: 4096, 88200: 8192,
+                          96000: 8192, 176400: 16384, 192000: 16384},
+                str(sizes))
+    empty = {sr: [b for b in range(BANDS) if not np.any(band_of_bin(sr, n) == b)]
+             for sr, n in sizes.items() if sr >= 44100}
+    fixed = [b for b in range(BANDS) if not np.any(band_of_bin(192000, N) == b)]
+    ok &= check("every band has a bin", not any(empty.values()) and fixed == [0, 1, 4],
+                f"empty {empty}; at a fixed N, 192 kHz misses {fixed}")
 
     print("\nALL PASS" if ok else "\nFAILURES PRESENT")
     return 0 if ok else 1

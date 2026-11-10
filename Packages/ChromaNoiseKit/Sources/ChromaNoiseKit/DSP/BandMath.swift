@@ -3,10 +3,21 @@ import Foundation
 /// Core constants and band geometry. Verified against tools/reference_dsp.py —
 /// if the two disagree, the Python reference wins until proven otherwise.
 public enum DSPConstants {
-    /// STFT frame size.
+    /// STFT frame size at output rates up to 48 kHz.
     public static let fftSize = 4096
     /// Hop between frames. Hann×Hann COLA requires hop ≤ fftSize/4.
     public static let hop = 1024
+    /// STFT frame size for an output rate: `fftSize`, doubled until bins are
+    /// no wider than at 48 kHz (11.7 Hz). The narrowest band is 18 Hz wide, so
+    /// every band keeps a bin at 96 and 192 kHz (USB DACs), and a frame stays
+    /// ~85 ms long. The hop is a quarter of it.
+    public static func fftSize(forSampleRate sampleRate: Double) -> Int {
+        let widestBin = 48000.0 / Double(fftSize)
+        var n = fftSize
+        // Capped (768 kHz) so a nonsense rate can't ask for an unbounded frame.
+        while sampleRate / Double(n) > widestBin, n < fftSize * 16 { n *= 2 }
+        return n
+    }
     /// Σ of squared periodic-Hann shifts at hop = N/4.
     public static let colaSum: Float = 1.5
     public static let bandCount = 32
