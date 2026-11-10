@@ -1,5 +1,6 @@
 import AVFoundation
 import ChromaNoiseKit
+import os
 
 /// v1 host: owns the AVAudioSession and AVAudioEngine and bridges an
 /// AVAudioSourceNode to the host-agnostic `NoiseEngine`. A future AUv3 target
@@ -8,15 +9,23 @@ import ChromaNoiseKit
 /// Main-actor isolated; session (de)activation, which can block for a while,
 /// happens asynchronously off the main thread.
 @MainActor
-final class StandaloneAudioHost: TransportBackend {
+final class StandaloneAudioHost: AudioHost, TransportBackend {
     /// Largest pull iOS makes per render callback (it grows to 4096 frames
     /// when the screen locks). Sizes the kit's ring lead.
     private static let maxFramesPerRender = 4096
 
+    private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ChromaNoise",
+                                    category: "audio")
+
     private let noise = NoiseEngine()
-    private let avEngine = AVAudioEngine()
+    private var avEngine = AVAudioEngine()
+    /// The media server restarted: `avEngine` is dead, and the next start
+    /// replaces it.
+    private var engineIsStale = false
     private var sourceNode: AVAudioSourceNode?
     private var observers: [NSObjectProtocol] = []
+    /// Tied to the current `avEngine`, and replaced with it.
+    private var configurationObserver: NSObjectProtocol?
     /// Play/pause policy and its bookkeeping; this class is its backend.
     private lazy var transport: TransportDriver = {
         let driver = TransportDriver()
@@ -37,10 +46,6 @@ final class StandaloneAudioHost: TransportBackend {
         let center = NotificationCenter.default
         // Delivered on the main queue, so main-actor state is safe to touch.
         observers = [
-            center.addObserver(forName: .AVAudioEngineConfigurationChange, object: avEngine,
-                               queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.transport.configurationChanged() }
-            },
             center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil,
                                queue: .main) { [weak self] note in
                 let info = InterruptionInfo(note)
@@ -52,12 +57,29 @@ final class StandaloneAudioHost: TransportBackend {
                     .flatMap(AVAudioSession.RouteChangeReason.init) == .oldDeviceUnavailable
                 MainActor.assumeIsolated { self?.handleRouteChange(deviceGone: deviceGone) }
             },
+            center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil,
+                               queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.handleMediaServicesReset() }
+            },
         ]
+        observeConfigurationChanges()
     }
 
     deinit {
         // The app's one host lives as long as the process; nothing to stop.
         observers.forEach(NotificationCenter.default.removeObserver)
+        configurationObserver.map(NotificationCenter.default.removeObserver)
+    }
+
+    /// Follows the current `avEngine`'s route and sample-rate changes.
+    private func observeConfigurationChanges() {
+        let center = NotificationCenter.default
+        configurationObserver.map(center.removeObserver)
+        configurationObserver = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange, object: avEngine, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.transport.configurationChanged() }
+        }
     }
 
     // MARK: transport
@@ -153,6 +175,13 @@ final class StandaloneAudioHost: TransportBackend {
     // MARK: engine graph (TransportBackend)
 
     func startEngine() throws {
+        if engineIsStale {
+            // Only ever between a stop and the next start, so nothing is
+            // attached to the engine being dropped.
+            avEngine = AVAudioEngine()
+            observeConfigurationChanges()
+            engineIsStale = false
+        }
         let hwRate = avEngine.outputNode.outputFormat(forBus: 0).sampleRate
         let sampleRate = hwRate > 0 ? hwRate : 48000
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 2) else {
@@ -196,6 +225,10 @@ final class StandaloneAudioHost: TransportBackend {
     func stopEngine() {
         // Stop rendering before tearing the kit down (kit contract).
         avEngine.stop()
+        // The count ends with the kit's session; log it for device checks
+        // (the first callbacks after a start can count).
+        let underruns = noise.underrunCount
+        Self.log.info("Engine stopped; render underruns since start: \(underruns)")
         if let sourceNode {
             avEngine.detach(sourceNode)
             self.sourceNode = nil
@@ -238,6 +271,15 @@ final class StandaloneAudioHost: TransportBackend {
     /// playing out of the speaker. Never auto-resumes.
     private func handleRouteChange(deviceGone: Bool) {
         if deviceGone { transport.outputDeviceLost() }
+    }
+
+    /// The media server crashed and restarted (rare). The system has dropped
+    /// the session and everything built on it, so nothing is playing and
+    /// nothing will resume: stop, so the UI shows that instead of "playing"
+    /// over silence, and start the next Play on a fresh engine.
+    private func handleMediaServicesReset() {
+        engineIsStale = true
+        transport.stop()
     }
 
     enum HostError: Error {

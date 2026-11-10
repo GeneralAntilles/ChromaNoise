@@ -8,7 +8,7 @@ import Observation
 @Observable
 final class PlayerModel {
     /// The app's one player: the UI and App Intents drive the same audio.
-    static let shared = PlayerModel()
+    static let shared = PlayerModel(host: StandaloneAudioHost())
 
     let presetGroups = Presets.groups()
     let presets = Presets.phonons()
@@ -104,11 +104,24 @@ final class PlayerModel {
     /// The last stretch of a sleep timer fades master volume to silence.
     static let sleepFadeSeconds: Double = 15
 
-    @ObservationIgnored private let host = StandaloneAudioHost()
+    @ObservationIgnored private let host: any AudioHost
+    /// Starts a sleep timer on the clock given to `init`. (A closure, so the
+    /// clock keeps its concrete type: an `any Clock` can't be passed on to
+    /// the generic timer.)
+    @ObservationIgnored private let startSleepTimer: @MainActor (PlayerModel, Duration) -> Task<Void, Never>
+    /// Where the last sound is kept.
+    @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var nowPlaying: NowPlayingController?
 
-    init() {
-        if !Self.isScreenshotRun, let saved = Self.loadSavedState() {
+    /// The app uses the defaults; tests pass a host without an audio stack,
+    /// a clock they move by hand and a scratch defaults suite. The
+    /// continuous clock keeps running while the device sleeps.
+    init<C: Clock<Duration>>(host: any AudioHost, clock: C = ContinuousClock(),
+                             defaults: UserDefaults = .standard) {
+        self.host = host
+        self.startSleepTimer = { model, length in model.runSleepTimer(on: clock, for: length) }
+        self.defaults = defaults
+        if !Self.isScreenshotRun, let saved = Self.loadSavedState(from: defaults) {
             phonon = saved.phonon
             // A built-in removed since (e.g. Grey, Violet) restores as Custom.
             if case .builtIn(let name) = saved.selection, !presets.contains(where: { $0.name == name }) {
@@ -140,7 +153,6 @@ final class PlayerModel {
             toggle: { [weak self] in self?.remoteToggle() ?? false })
         publishNowPlaying()
     }
-
 
     /// Load a sound's bars and modulation. Volume is a global setting, so a
     /// preset's stored `masterVolume` is ignored.
@@ -196,22 +208,32 @@ final class PlayerModel {
         }
         let end = Date.now.addingTimeInterval(Double(minutes) * 60)
         sleepTimer = SleepTimer(minutes: minutes, end: end)
+        sleepTask = startSleepTimer(self, .seconds(minutes * 60))
+    }
+
+    /// Waits out the timer on `clock`, fading over its last stretch, then
+    /// stops playback. (Generic, so the deadline is one of the clock's own
+    /// instants.)
+    private func runSleepTimer<C: Clock<Duration>>(on clock: C, for length: Duration) -> Task<Void, Never> {
+        let end = clock.now.advanced(by: length)
+        let fade = Duration.seconds(Self.sleepFadeSeconds)
         // The task holds `self` only weakly, per short update, never across
-        // a sleep. Task.sleep(for:) uses the continuous clock, so time keeps
-        // passing while the device sleeps.
-        sleepTask = Task { [weak self] in
-            let fadeStart = end.timeIntervalSinceNow - Self.sleepFadeSeconds
-            if fadeStart > 0 { try? await Task.sleep(for: .seconds(fadeStart)) }
+        // a sleep.
+        return Task { [weak self] in
+            // Returns at once if the fade is already due.
+            try? await clock.sleep(until: end.advanced(by: .zero - fade), tolerance: nil)
 
             // Step the fade gain down; the kit ramps volume each hop, so the
-            // steps don't zipper.
+            // steps don't zipper. Squared, so loudness falls evenly rather
+            // than mostly in the last seconds.
             let steps = 60
-            let stepSeconds = min(Self.sleepFadeSeconds, max(end.timeIntervalSinceNow, 0)) / Double(steps)
+            let step = min(fade, max(clock.now.duration(to: end), .zero)) / steps
             for i in 1...steps {
                 guard !Task.isCancelled, self != nil else { return }
-                self?.fadeGain = 1 - Float(i) / Float(steps)
+                let remaining = 1 - Float(i) / Float(steps)
+                self?.fadeGain = remaining * remaining
                 self?.applyVolume()
-                try? await Task.sleep(for: .seconds(stepSeconds))
+                try? await clock.sleep(for: step)
             }
             guard !Task.isCancelled else { return }
             self?.sleepTimerExpired()
@@ -276,7 +298,12 @@ final class PlayerModel {
         do {
             try await start.value
         } catch is CancellationError {
-            // Paused, stopped, interrupted or unplugged while starting.
+            // Paused, stopped, interrupted or unplugged while starting. Or
+            // Play was pressed during an interruption that then ended with a
+            // resume, which replaces this start: its outcome is this Play's.
+            if case .starting(_, resuming: true) = transport {
+                return await finishStart(host.requestStart())
+            }
         } catch {
             errorMessage = "Couldn't start audio: \(error.localizedDescription)"
         }
@@ -321,26 +348,21 @@ final class PlayerModel {
         let state = SavedState(phonon: phonon, selection: selection,
                                loadedPhonon: loadedPhonon, masterVolume: masterVolume)
         if let data = try? JSONEncoder().encode(state) {
-            UserDefaults.standard.set(data, forKey: Self.savedStateKey)
+            defaults.set(data, forKey: Self.savedStateKey)
         }
     }
 
-    private static func loadSavedState() -> SavedState? {
-        guard let data = UserDefaults.standard.data(forKey: savedStateKey),
+    private static func loadSavedState(from defaults: UserDefaults) -> SavedState? {
+        guard let data = defaults.data(forKey: savedStateKey),
               var state = try? JSONDecoder().decode(SavedState.self, from: data),
               // Decoding bypasses Phonon's init checks; validate before use.
-              isPlayable(state.phonon)
+              state.phonon.isPlayable
         else { return nil }
-        if let loaded = state.loadedPhonon, !isPlayable(loaded) {
+        if let loaded = state.loadedPhonon, !loaded.isPlayable {
             state.loadedPhonon = nil
         }
         state.masterVolume = min(max(state.masterVolume, 0), 1)
         return state
-    }
-
-    private static func isPlayable(_ phonon: Phonon) -> Bool {
-        phonon.amps.count == DSPConstants.bandCount
-            && phonon.amps.allSatisfy { $0.isFinite && $0 >= 0 }
     }
 
     /// Built-ins are stored unnormalized (Blue peaks near 14×), but the

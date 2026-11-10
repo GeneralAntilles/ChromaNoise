@@ -24,9 +24,10 @@ final class StoredPhonon {
         data = try JSONEncoder().encode(phonon)
     }
 
-    /// The saved sound, named by the (renameable) `name` column.
+    /// The saved sound, named by the (renameable) `name` column; nil if the
+    /// stored blob is unreadable or not a playable phonon.
     var phonon: Phonon? {
-        guard var p = try? JSONDecoder().decode(Phonon.self, from: data) else { return nil }
+        guard var p = try? JSONDecoder().decode(Phonon.self, from: data), p.isPlayable else { return nil }
         p.name = name
         return p
     }
