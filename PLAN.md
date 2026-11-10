@@ -1,9 +1,9 @@
 # ChromaNoise iOS — Port/Reimplementation Plan
 
-## Status (2026-10-16)
+## Status (2026-11-09)
 
 - **DSP math verified**: `tools/reference_dsp.py` (numpy) implements the full
-  pipeline and passes all 18 checks at machine precision. It is the golden
+  pipeline and passes all its checks at machine precision. It is the golden
   reference — Swift mirrors it.
 - **Kit compiles and passes**: `Packages/ChromaNoiseKit` builds with Swift 6.1
   on Linux and all 26 tests pass under `swift test -c release` (the engine
@@ -19,7 +19,9 @@
     AUv3 allocate/deallocateRenderResources).
   - The worker used to fill the whole ring (~170 ms queued at 48 kHz);
     it now keeps `2 hops + maxFrames` queued (~53 ms with 512-frame pulls).
-    Slider-to-ear is that plus the ~85 ms OLA crossfade.
+    Slider-to-ear is that plus the ~85 ms OLA crossfade. The app passes
+    `maxFrames` 4096 (the locked-screen pull size), so it queues 6144
+    frames: 128 ms at 48 kHz, ~210 ms slider-to-ear.
   - Master volume, applied after overlap-add, is now ramped across each hop.
 - **Design simplification found during verification**: 75% OLA overlap already
   crossfades spectral changes over ~4 hops (~85 ms), so the per-hop gain ramp
@@ -67,8 +69,8 @@
   (including everything three adversarial Codex reviews found) catches
   all of them. Passes on macOS and on Linux (`swift:6.1-noble`, as CI).
   Deliberate changes: a repeated `.began`, or one during an automatic
-  resume, keeps the resume armed. Needs a device re-check (calls, Siri,
-  unplug mid-start, lock-screen toggle).
+  resume, keeps the resume armed. Verified on device (iPhone 13 Pro,
+  TestFlight build 37): calls, Siri, unplug mid-start, lock-screen toggle.
 - **Presets + saving** (2026-10-16): 8 built-ins in two groups — Noise
   (White, Pink, Brown, Blue) and Ambience (Ocean [9 s tremolo], Rain, Fan,
   Cabin; first guesses, to be tuned by ear). Violet and Grey were tried and
@@ -87,8 +89,45 @@
   Stop, sleep-timer expiry and unplug release it. The current sound (painted
   or not), selection and volume are saved on leaving the foreground and
   restored on launch (no auto-play). Lock screen needs a device check.
-- **Not started**: clone file ingestion, tremolo controls in the UI,
-  landscape/resizable layout (foldables), artwork for Now Playing.
+- **Since shipped**: swell (tremolo) controls (`UI/SwellControls.swift`),
+  the wide/landscape layout (`UI/RootView.swift`), Now Playing artwork
+  (`UI/SpectrumArtwork.swift`), App Intents (`App/Intents.swift`).
+- **Review pass** (2026-11-09):
+  - The worker sleeps half a hop when the ring lead is full instead of
+    polling every 2 ms (~94 wakeups/s at 48 kHz, was 500). Energy effect
+    not measured on device.
+  - `NoiseEngine.underrunCount` counts render calls padded with silence
+    (the first callbacks after `prepare` can count). The host logs it at
+    every engine stop (subsystem = bundle ID, category `audio`).
+  - The STFT frame grows with the output rate
+    (`DSPConstants.fftSize(forSampleRate:)`: 4096 up to 48 kHz, 8192 at
+    88.2/96 kHz, 16384 at 176.4/192 kHz; hop = N/4), so every band keeps
+    a bin on high-rate USB DACs. Mirrored in the Python reference.
+  - `Phonon.isPlayable` gates every decoded phonon (last sound and saved
+    sounds); a malformed saved sound is skipped instead of crashing.
+  - The sleep fade is squared (even loudness fall) instead of linear.
+  - Media-services reset: the host stops the transport and builds a fresh
+    `AVAudioEngine` on the next start. Compiles; never exercised.
+  - A Play pressed during an interruption that then resumes now follows
+    the resume's outcome (`PlayerModel.finishStart`), so Siri no longer
+    reports a failure while audio starts.
+  - `PlayerModel` takes its host (`AudioHost` protocol), clock and
+    defaults suite through `init`, ready for tests.
+  - CI also runs the kit tests on macOS, the only place the vDSP FFT runs.
+- **Open from that review**:
+  - No app test target yet: the sleep timer, persistence and the
+    interruption-resume Play path above are still untested.
+  - Unplugging while playing: `.configurationChanged` restarts the engine
+    at once and `.oldDeviceUnavailable` arrives separately, so a restart
+    on the speaker may be audible before the stop. Check on device.
+  - Saved sounds: Delete has no confirmation; `context.save()` errors are
+    dropped; a store that fails to open is a `fatalError` at launch.
+  - Device checks: locked screen for 30 min with no underruns logged
+    after the first start; the fade curve by ear; a 96 kHz DAC if one is
+    to hand; a media-services reset (Settings > Developer > Reset Media
+    Services).
+- **Not started**: clone file ingestion and UI (the kit's analysis half
+  is done and tested).
 
 ## Context
 
@@ -112,8 +151,8 @@
 ### Numeric spec
 
 - **Sample rate**: device-native (typically 48 kHz; 44.1 kHz on some routes; ~16 kHz over some Bluetooth profiles).
-- **FFT size N**: 4096.
-- **Hop**: 1024 (75% overlap) — required for proper Hann × Hann COLA.
+- **FFT size N**: 4096 (doubled above 48 kHz so bins stay ≤ 11.7 Hz).
+- **Hop**: N/4 = 1024 (75% overlap) — required for proper Hann × Hann COLA.
 - **Window**: Hann on analysis and synthesis sides.
 - **Latency**: hop / sample_rate ≈ 21 ms @ 48 kHz; ~30–40 ms total end-to-end.
 - **Frequency resolution**: 11.7 Hz/bin @ 48 kHz.
@@ -153,12 +192,18 @@ Implemented as a sine LFO multiplied across the post-overlap-add output buffer i
 ## Target & Tooling
 
 - iOS 17.2+ (SwiftData stability, Observation macro, modern SwiftUI).
-- Xcode 15+, Swift 5.10.
+- Xcode 16+ (`@Previewable`); built and released with Xcode 27.1. Swift 5
+  language mode in both the app and the kit.
 - Frameworks: `AVFoundation`, `Accelerate`, `MediaPlayer`, `SwiftData`, `SwiftUI`.
 
 ---
 
 ## Project Structure
+
+*Original design. The tree below was the plan; `CLAUDE.md` (Layout) and
+the Status section describe what was built (no `Services/`, `SpectrumModel`
+or clone UI; `PlayerModel`, `NowPlayingController`, `Intents` and the kit's
+`Transport/` were added).*
 
 Single Xcode app target with one internal SPM package (`ChromaNoiseKit`). The kit is **host-agnostic**: it imports neither `AVFoundation` nor `AVAudioSession`. This is what makes a v2 AUv3 extension a drop-in: the future AU target plugs `NoiseEngine.render(into:frameCount:)` into `AUAudioUnit.internalRenderBlock` instead of `AVAudioSourceNode.renderBlock`.
 
@@ -222,10 +267,11 @@ Note: `AudioFileLoader` needs AVAudioFile; if we hold the "no AVFoundation in ki
 ```swift
 public final class NoiseEngine {
   public init()
-  public func prepare(sampleRate: Double, maxFrames: UInt32)
+  public func prepare(sampleRate: Double, maxFrames: Int)
   public func teardown()
-  public func render(into bufferList: UnsafeMutableAudioBufferListPointer,
-                     frameCount: UInt32) -> Int32   // OSStatus
+  public func render(left: UnsafeMutablePointer<Float>,
+                     right: UnsafeMutablePointer<Float>, frameCount: Int)
+  public var underrunCount: Int { get }
   public func setBandGains(_ amps: [Float])         // 32 floats, post-curve
   public func setMasterVolume(_ v: Float)
   public func setTremolo(periodSeconds: Float, depth: Float)

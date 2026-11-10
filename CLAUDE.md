@@ -1,6 +1,7 @@
 # ChromaNoise
 
-iOS spectrum-shaped noise generator (clean-room take on Android's ChromaDoze).
+iOS spectrum-shaped noise generator (an independent reimplementation inspired
+by Android's ChromaDoze; no upstream code).
 `PLAN.md` is the design doc and holds the current status and milestone list —
 read its Status section first.
 

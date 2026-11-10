@@ -17,9 +17,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
-if [ "${1:-}" != "--dirty" ] && [ -n "$(git status --porcelain)" ]; then
-    echo "Working tree has uncommitted changes; commit them or pass --dirty." >&2
-    exit 1
+if [ "${1:-}" != "--dirty" ]; then
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "Working tree has uncommitted changes; commit them or pass --dirty." >&2
+        exit 1
+    fi
+    # Against the remote-tracking ref as last fetched; no network needed.
+    if ! git merge-base --is-ancestor HEAD '@{upstream}' 2>/dev/null; then
+        echo "HEAD isn't on its upstream branch; push first or pass --dirty." >&2
+        exit 1
+    fi
 fi
 
 set -a; source ~/.appstoreconnect/chromanoise.env; set +a
