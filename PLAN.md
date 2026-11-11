@@ -7,12 +7,12 @@ November 2026).
 
 ## Status (2026-11-10)
 
-Shipped in 1.0 (TestFlight build 46): the 32-band painter, built-in and
+Shipped in 1.0 (TestFlight build 51): the 32-band painter, built-in and
 saved sounds, swell (tremolo), sleep timer, background playback with
 lock-screen controls and artwork, interruption and route handling, App
 Intents (Play, Pause, Sleep Timer), iPhone landscape and iPad layouts.
 
-Since build 46, not yet in a build:
+New in build 51 (since 46), so not yet checked on a device:
 
 - Saved sounds load with the bars they were painted with (only built-ins
   are scaled to fill the painter).
