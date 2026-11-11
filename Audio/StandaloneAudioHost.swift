@@ -10,9 +10,16 @@ import os
 /// happens asynchronously off the main thread.
 @MainActor
 final class StandaloneAudioHost: AudioHost, TransportBackend {
-    /// Largest pull iOS makes per render callback (it grows to 4096 frames
-    /// when the screen locks). Sizes the kit's ring lead.
+    /// Largest pull iOS makes per render callback at up to 48 kHz (it grows
+    /// to 4096 frames when the screen locks). Sizes the kit's ring lead.
     private static let maxFramesPerRender = 4096
+
+    /// The pull to size the ring for at `sampleRate`: the same ~85 ms above
+    /// 48 kHz (a 96 kHz DAC may be asked for 8192 frames), never fewer
+    /// frames below it.
+    static func maxFramesPerRender(atSampleRate sampleRate: Double) -> Int {
+        max(maxFramesPerRender, Int((Double(maxFramesPerRender) * sampleRate / 48000).rounded(.up)))
+    }
 
     private static let log = Logger(subsystem: Bundle.main.bundleIdentifier ?? "ChromaNoise",
                                     category: "audio")
@@ -32,8 +39,6 @@ final class StandaloneAudioHost: AudioHost, TransportBackend {
         driver.backend = self
         return driver
     }()
-
-    var state: TransportMachine.State { transport.state }
 
     /// Called on the main actor after every transport state change, whether
     /// requested (play, pause) or not (interruption, route change).
@@ -189,7 +194,8 @@ final class StandaloneAudioHost: AudioHost, TransportBackend {
         }
 
         // Kit contract: prepare only while nothing is rendering.
-        noise.prepare(sampleRate: sampleRate, maxFrames: Self.maxFramesPerRender)
+        noise.prepare(sampleRate: sampleRate,
+                      maxFrames: Self.maxFramesPerRender(atSampleRate: sampleRate))
 
         let node = Self.makeSourceNode(format: format, noise: noise)
         avEngine.attach(node)
@@ -282,8 +288,18 @@ final class StandaloneAudioHost: AudioHost, TransportBackend {
         transport.stop()
     }
 
-    enum HostError: Error {
+    enum HostError: LocalizedError {
         case unsupportedFormat(Double)
         case activationFailed
+
+        /// Shown in the UI's error row after "Couldn't start audio:".
+        var errorDescription: String? {
+            switch self {
+            case .unsupportedFormat(let sampleRate):
+                "The audio output's format (\(Int(sampleRate)) Hz) isn't supported."
+            case .activationFailed:
+                "The audio session couldn't be activated."
+            }
+        }
     }
 }

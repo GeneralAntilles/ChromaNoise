@@ -195,6 +195,7 @@ struct PlayerModelTests {
         model.togglePlayback()
         host.set(.starting(attempt: 1, resuming: false))
         #expect(host.calls == [.start])
+        #expect(model.isPlayingOrStarting && !model.isPlaying)
 
         model.togglePlayback()
         #expect(host.calls == [.start, .pause])
@@ -225,11 +226,39 @@ struct PlayerModelTests {
         #expect(model.tremoloPeriodSeconds < 2)
         model.tremoloDepth = 0.5
         #expect(model.tremoloPeriodSeconds == 8)
-        // An already chosen period is kept.
-        model.tremoloPeriodSeconds = 3
-        model.tremoloDepth = 0
-        model.tremoloDepth = 0.5
-        #expect(model.tremoloPeriodSeconds == 3)
+        // An already chosen period is kept, a fast one included.
+        for chosen: Float in [3, 1.5, 0.5] {
+            model.tremoloPeriodSeconds = chosen
+            model.tremoloDepth = 0
+            model.tremoloDepth = 0.5
+            #expect(model.tremoloPeriodSeconds == chosen)
+        }
+    }
+
+    /// Built-ins are scaled to fill the painter; a saved sound comes back
+    /// with the bars it was painted with.
+    @Test func loadingASavedSoundKeepsItsBars() {
+        let model = makeModel()
+        var amps = [Float](repeating: 0.1, count: DSPConstants.bandCount)
+        amps[5] = 0.5
+        let id = UUID()
+        model.load(Phonon(name: "Quiet", amps: amps), as: .saved(id: id))
+        #expect(model.bandAmps == amps)
+        #expect(!model.isEdited)
+
+        // One that peaks above the painter's top is scaled to fit.
+        amps[5] = 4
+        model.load(Phonon(name: "Loud", amps: amps), as: .saved(id: id))
+        #expect(model.bandAmps.max() == 1)
+        #expect(model.bandAmps[0] == 0.025)
+    }
+
+    @Test func theRingIsSizedForTheSampleRate() {
+        #expect(StandaloneAudioHost.maxFramesPerRender(atSampleRate: 16000) == 4096)
+        #expect(StandaloneAudioHost.maxFramesPerRender(atSampleRate: 44100) == 4096)
+        #expect(StandaloneAudioHost.maxFramesPerRender(atSampleRate: 48000) == 4096)
+        #expect(StandaloneAudioHost.maxFramesPerRender(atSampleRate: 96000) == 8192)
+        #expect(StandaloneAudioHost.maxFramesPerRender(atSampleRate: 192000) == 16384)
     }
 
     // MARK: persistence

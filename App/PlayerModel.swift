@@ -55,14 +55,20 @@ final class PlayerModel {
     var tremoloDepth: Float {
         get { phonon.tremoloDepth }
         set {
-            // Presets without swell carry the kit's 1 s default period, a
-            // fast pulse. Turning swell on from off starts at a slow wave.
-            if phonon.tremoloDepth < 0.001, newValue >= 0.001, phonon.tremoloPeriodSeconds < 2 {
+            // Sounds without swell carry the kit's 1 s default period, a
+            // fast pulse. Turning swell on from off starts those at a slow
+            // wave; a period the user chose (the slider never lands on
+            // exactly the default) is kept.
+            if phonon.tremoloDepth < 0.001, newValue >= 0.001,
+               phonon.tremoloPeriodSeconds == Self.unsetTremoloPeriod {
                 phonon.tremoloPeriodSeconds = 8
             }
             phonon.tremoloDepth = newValue
         }
     }
+
+    /// `Phonon`'s default period: what a sound that never had swell holds.
+    private static let unsetTremoloPeriod: Float = 1
 
     var tremoloPeriodSeconds: Float {
         get { phonon.tremoloPeriodSeconds }
@@ -88,6 +94,9 @@ final class PlayerModel {
         }
     }
     var isPlaying: Bool { transport.isRunning }
+    /// Playing, or a start is on its way there: the play button offers
+    /// Pause, since a tap now pauses (cancelling the start).
+    var isPlayingOrStarting: Bool { isPlaying || transport.isStarting }
     /// When the current playback started; nil while paused. The UI renders
     /// elapsed time from this with a system timer text (no app-driven ticks).
     private(set) var playStartedAt: Date?
@@ -155,9 +164,14 @@ final class PlayerModel {
     }
 
     /// Load a sound's bars and modulation. Volume is a global setting, so a
-    /// preset's stored `masterVolume` is ignored.
+    /// preset's stored `masterVolume` is ignored. A built-in is scaled to
+    /// fill the painter; a saved sound keeps the bars it was painted with.
     func load(_ preset: Phonon, as selection: PresetSelection) {
-        phonon = Self.normalized(preset)
+        if case .builtIn = selection {
+            phonon = Self.normalized(preset)
+        } else {
+            phonon = Self.fitted(preset)
+        }
         loadedPhonon = phonon
         self.selection = selection
     }
@@ -269,7 +283,7 @@ final class PlayerModel {
     /// The on-screen button: does what its label says. A start still
     /// activating counts as playing, so a quick second tap cancels it.
     func togglePlayback() {
-        if isPlaying || transport.isStarting { pause() } else { startPlaying() }
+        if isPlayingOrStarting { pause() } else { startPlaying() }
     }
 
     /// Headphone/Siri toggle: an interruption that will auto-resume (or a
@@ -374,5 +388,11 @@ final class PlayerModel {
             p.amps = p.amps.map { $0 / peak }
         }
         return p
+    }
+
+    /// A saved sound as painted. Only one that somehow peaks above the
+    /// painter's top (amp 1) is scaled down to fit.
+    private static func fitted(_ sound: Phonon) -> Phonon {
+        (sound.amps.max() ?? 0) > 1 ? normalized(sound) : sound
     }
 }

@@ -75,6 +75,8 @@ struct NowPlayingBar: View {
                     Text("Stops at \(end.formatted(date: .omitted, time: .shortened))")
                 } else if let started = model.playStartedAt {
                     Text("Playing \(Text(started, style: .timer))")
+                } else if model.isPlayingOrStarting {
+                    Text("Starting…")
                 } else {
                     Text("Paused")
                 }
@@ -110,8 +112,9 @@ struct NowPlayingBar: View {
     private var playButton: some View {
         Button(action: model.togglePlayback) {
             // Label keeps "Play"/"Pause" as the accessibility label.
-            Label(model.isPlaying ? "Pause" : "Play",
-                  systemImage: model.isPlaying ? "pause.fill" : "play.fill")
+            // Matches `togglePlayback`: Pause as soon as a start is under way.
+            Label(model.isPlayingOrStarting ? "Pause" : "Play",
+                  systemImage: model.isPlayingOrStarting ? "pause.fill" : "play.fill")
                 .labelStyle(.iconOnly)
                 .font(.title2.weight(.semibold))
                 .frame(width: isShort ? 36 : 44, height: isShort ? 36 : 44)

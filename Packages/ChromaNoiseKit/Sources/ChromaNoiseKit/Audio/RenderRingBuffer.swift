@@ -37,10 +37,6 @@ public final class RenderRingBuffer {
         head.load(ordering: .acquiring) - tail.load(ordering: .relaxed)
     }
 
-    public var availableToWrite: Int {
-        capacity - (head.load(ordering: .relaxed) - tail.load(ordering: .acquiring))
-    }
-
     /// Producer side. Returns frames actually written (0 if full).
     @discardableResult
     public func write(left srcL: [Float], right srcR: [Float], count: Int) -> Int {
