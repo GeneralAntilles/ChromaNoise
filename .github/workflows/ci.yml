@@ -4,20 +4,27 @@ on:
   push:
   pull_request:
 
+# A newer push to the same branch or PR replaces the run in progress.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   reference:
     name: Python DSP reference
+    # Every push runs CI, so a PR from a branch of this repo is already
+    # covered; only PRs from forks need their own run.
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install numpy
-      - run: python tools/reference_dsp.py
+      - uses: astral-sh/setup-uv@v6
+      - run: uv venv && uv pip install numpy
+      - run: uv run tools/reference_dsp.py
 
   kit:
     name: ChromaNoiseKit (Linux)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     container: swift:6.1-noble
     defaults:
@@ -27,33 +34,24 @@ jobs:
       - uses: actions/checkout@v4
       - run: swift test -c release
 
-  # The only job that runs the vDSP FFT the app ships with (Linux uses the
-  # portable one).
-  kit-macos:
-    name: ChromaNoiseKit (macOS)
+  # One macOS job (billed per job, at ten times the Linux rate): the kit
+  # tests, the only place the vDSP FFT the app ships with runs (Linux uses
+  # the portable one), then the app.
+  macos:
+    name: Kit (macOS) + iOS app
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: macos-15
-    defaults:
-      run:
+    steps:
+      - uses: actions/checkout@v4
+      - name: Kit tests
         working-directory: Packages/ChromaNoiseKit
-    steps:
-      - uses: actions/checkout@v4
-      - run: swift test -c release
-
-  app:
-    name: iOS app (Simulator build)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v4
+        run: swift test -c release
       - run: brew install xcodegen
       - run: xcodegen generate
-      - run: >
-          xcodebuild build
-          -project ChromaNoise.xcodeproj
-          -scheme ChromaNoise
-          -destination 'generic/platform=iOS Simulator'
-          CODE_SIGNING_ALLOWED=NO
-      # App-level unit tests (AppTests/), hosted in the app.
-      - run: >
+      # Builds the app, its unit tests (AppTests/) and the screenshot UI
+      # tests; runs the unit tests, hosted in the app.
+      - name: App build and tests
+        run: >
           xcodebuild test
           -project ChromaNoise.xcodeproj
           -scheme ChromaNoise

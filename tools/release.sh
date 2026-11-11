@@ -54,7 +54,9 @@ xcodebuild archive -quiet \
     -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
     CURRENT_PROJECT_VERSION="$BUILD" "${AUTH[@]}"
 
-OPTIONS=$(mktemp -t ExportOptions).plist
+OPTIONS_DIR=$(mktemp -d)
+trap 'rm -rf "$OPTIONS_DIR"' EXIT
+OPTIONS="$OPTIONS_DIR/ExportOptions.plist"
 cat > "$OPTIONS" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -74,7 +76,6 @@ LOG="build/upload-$BUILD.log"
 status=0
 xcodebuild -exportArchive -archivePath "$ARCHIVE" -exportPath "build/upload-$BUILD" \
     -exportOptionsPlist "$OPTIONS" "${AUTH[@]}" > "$LOG" 2>&1 || status=$?
-rm -f "$OPTIONS"
 grep -E "EXPORT|Upload|error" "$LOG" || true
 if [ $status -ne 0 ]; then
     echo "Upload failed; full log: $LOG" >&2

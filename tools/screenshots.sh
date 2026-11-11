@@ -39,6 +39,9 @@ xcodegen --quiet
 # incremental) so an Xcode build of the app can't swap products out mid-run.
 DERIVED=build/screenshots-derived-data
 echo "==> Building"
+# The derived data is kept, so drop test-run files from earlier builds (an
+# Xcode update names a new one per SDK); the build writes the current one.
+rm -f "$DERIVED"/Build/Products/*.xctestrun
 xcodebuild build-for-testing -quiet \
     -project ChromaNoise.xcodeproj -scheme Screenshots \
     -destination 'generic/platform=iOS Simulator' \
@@ -100,6 +103,10 @@ EOF
             1206x2622|2622x1206|1179x2556|2556x1179|1320x2868|2868x1320|1290x2796|2796x1290|2064x2752|2752x2064|2048x2732|2732x2048|1398x2034|2034x1398|2007x2853|2853x2007) ok="" ;;
             *) ok="  <-- not an App Store size" ;;
         esac
+        # App Store Connect refuses images with an alpha channel.
+        if [ "$(sips -g hasAlpha "$f" | awk '/hasAlpha/ {print $2}')" != no ]; then
+            ok="$ok  <-- has an alpha channel"
+        fi
         echo "    $(basename "$f")  ${w}x${h}${ok}"
     done
 }

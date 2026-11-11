@@ -6,7 +6,8 @@ Numerically verifies every constant and algorithm in the Swift DSP core
 this file; the XCTest suite mirrors these checks. If Swift and this file
 disagree, this file wins until proven otherwise.
 
-Run: python3 tools/reference_dsp.py   (exits nonzero on any failure)
+Run: uv run tools/reference_dsp.py   (in the repo's uv venv, which needs numpy;
+exits nonzero on any failure)
 """
 
 import numpy as np
@@ -256,7 +257,6 @@ def main():
     v = clone(synthesize(build_gain(preset("pink")), 12.0), SR)
     octaves_per_band = np.log2(FMAX / FMIN) / BANDS
     slope_per_band = np.polyfit(np.arange(BANDS), v, 1)[0]
-    expect = -np.log10(np.sqrt(2)) / 3 * octaves_per_band / np.log10(2) * np.log10(2)
     # amp halves every 2 octaves -> dv/octave = log10(sqrt(2))/3 ~ 0.0502
     expect = -0.0502 * octaves_per_band
     ok &= check("clone(pink) slider slope", abs(slope_per_band - expect) < 0.01,

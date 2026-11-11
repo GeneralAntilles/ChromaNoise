@@ -1,3 +1,5 @@
+import ImageIO
+import UniformTypeIdentifiers
 import XCTest
 
 /// Captures App Store screenshots of the staged scenes in
@@ -35,7 +37,11 @@ final class ScreenshotTests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-screenshot", scene]
         app.launch()
-        XCTAssertTrue(app.buttons["Pause"].waitForExistence(timeout: 20), "\(scene): never started playing")
+        // The status line, not the Pause button: that shows as soon as a
+        // start is under way.
+        let playing = NSPredicate(format: "label CONTAINS 'Playing' OR label CONTAINS 'Stops at'")
+        XCTAssertTrue(app.descendants(matching: .any).matching(playing).firstMatch
+            .waitForExistence(timeout: 20), "\(scene): never started playing")
         // Some displays don't rotate (iPhone Duo's folded outer screen);
         // skip landscape there rather than save a duplicate portrait shot.
         if orientation.isLandscape, app.frame.width < app.frame.height {
@@ -46,16 +52,7 @@ final class ScreenshotTests: XCTestCase {
         prepare(app)
         sleep(2)   // let animations settle and the clocks tick past 0:00
 
-        // Landscape captures come back as portrait pixels plus an orientation
-        // tag; redraw so the PNG itself is upright (App Store Connect reads
-        // pixels, not tags).
-        let shot = screenshotOfScreen(showing: app)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = shot.scale
-        let upright = UIGraphicsImageRenderer(size: shot.size, format: format).image { _ in
-            shot.draw(at: .zero)
-        }
-        guard let png = upright.pngData() else {
+        guard let png = Self.opaquePNG(screenshotOfScreen(showing: app)) else {
             return XCTFail("\(name): couldn't encode PNG")
         }
         let attachment = XCTAttachment(data: png, uniformTypeIdentifier: "public.png")
@@ -64,6 +61,34 @@ final class ScreenshotTests: XCTestCase {
         add(attachment)
         app.terminate()
         XCUIDevice.shared.orientation = .portrait
+    }
+
+    /// The capture as an upright PNG without an alpha channel. Landscape
+    /// captures come back as portrait pixels plus an orientation tag, and
+    /// App Store Connect reads pixels, not tags; it also refuses images with
+    /// an alpha channel, which `UIImage.pngData()` writes even for an opaque
+    /// image. So redraw into an RGB-only bitmap and encode that.
+    private static func opaquePNG(_ shot: UIImage) -> Data? {
+        let width = Int((shot.size.width * shot.scale).rounded())
+        let height = Int((shot.size.height * shot.scale).rounded())
+        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
+                                      bytesPerRow: 0, space: space,
+                                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        else { return nil }
+        // UIKit drawing: applies the orientation tag, y down.
+        context.translateBy(x: 0, y: CGFloat(height))
+        context.scaleBy(x: 1, y: -1)
+        UIGraphicsPushContext(context)
+        shot.draw(in: CGRect(x: 0, y: 0, width: width, height: height))
+        UIGraphicsPopContext()
+        let data = NSMutableData()
+        guard let image = context.makeImage(),
+              let destination = CGImageDestinationCreateWithData(
+                data, UTType.png.identifier as CFString, 1, nil)
+        else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     /// The screen the app is on. XCUIScreen.main is the iPhone Duo's cover

@@ -72,7 +72,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.talkabel.ChromaNoiseTests
         GENERATE_INFOPLIST_FILE: YES
-  # App Store screenshots only (tools/screenshots.sh); not part of CI.
+  # App Store screenshots only (tools/screenshots.sh); CI compiles it but
+  # doesn't run it.
   ChromaNoiseUITests:
     type: bundle.ui-testing
     platform: iOS
@@ -91,6 +92,8 @@ schemes:
       targets:
         ChromaNoise: all
         ChromaNoiseTests: [test]
+        # Built (never run) with the tests, so CI catches it going stale.
+        ChromaNoiseUITests: [test]
     run:
       config: Debug
     test:
