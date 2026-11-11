@@ -2,8 +2,9 @@
 
 iOS spectrum-shaped noise generator (an independent reimplementation inspired
 by Android's ChromaDoze; no upstream code).
-`PLAN.md` is the design doc and holds the current status and milestone list —
-read its Status section first.
+`PLAN.md` holds what is left: current status, open issues, device checks and
+the plans for unbuilt features — read its Status section first. (The original
+design document is in git history.)
 
 ## Layout
 
@@ -27,17 +28,20 @@ open ChromaNoise.xcodeproj
 
 # App build, no signing needed for the simulator
 xcodebuild build -project ChromaNoise.xcodeproj -scheme ChromaNoise \
-  -destination 'platform=iOS Simulator,name=iPhone 16' CODE_SIGNING_ALLOWED=NO
+  -destination 'platform=iOS Simulator,name=iPhone 17' CODE_SIGNING_ALLOWED=NO
 
 # App tests (PlayerModel: sleep timer, starting, persistence)
 xcodebuild test -project ChromaNoise.xcodeproj -scheme ChromaNoise \
-  -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
   -only-testing:ChromaNoiseTests CODE_SIGNING_ALLOWED=NO
 
 # Kit tests (fast; release because the synthesis tests push ~1000 FFTs)
 (cd Packages/ChromaNoiseKit && swift test -c release)
 
-python3 tools/reference_dsp.py        # needs numpy
+# Python runs in a uv virtual environment (.venv, gitignored), never the
+# system python3
+uv venv && uv pip install numpy       # once
+uv run tools/reference_dsp.py
 
 # App Store screenshots (6.1" iPhone, 13" iPad, iPhone Duo) -> screenshots/<device>/
 tools/screenshots.sh                  # scenes: App/ScreenshotScenario.swift

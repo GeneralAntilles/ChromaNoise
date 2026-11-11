@@ -1,460 +1,145 @@
-# ChromaNoise iOS — Port/Reimplementation Plan
+# ChromaNoise — Plan
 
-## Status (2026-11-09)
+What is left to build and to check. How the shipped app works is in the
+code, `CLAUDE.md` and `Packages/ChromaNoiseKit/README.md`; how it got there
+is in git history (the original design document was this file, up to
+November 2026).
 
-- **DSP math verified**: `tools/reference_dsp.py` (numpy) implements the full
-  pipeline and passes all its checks at machine precision. It is the golden
-  reference — Swift mirrors it.
-- **Kit compiles and passes**: `Packages/ChromaNoiseKit` builds with Swift 6.1
-  on Linux and all 26 tests pass under `swift test -c release` (the engine
-  threading tests are also clean under ThreadSanitizer). CI runs both the
-  Python reference and the kit tests on every push. Still unbuilt on Apple
-  platforms — expect no surprises (the kit uses only Foundation + swift-atomics).
-- **Engine lifecycle hardened** (found on first compile/review):
-  - `prepare` after `teardown` used to leave the old worker running against
-    the new ring (two producers on an SPSC ring) on every route/sample-rate
-    change; workers are now per-session and `teardown` joins them.
-  - The render path no longer retains: it reads an `Unmanaged` ring pointer.
-    Contract: the host stops rendering before `prepare`/`teardown` (same as
-    AUv3 allocate/deallocateRenderResources).
-  - The worker used to fill the whole ring (~170 ms queued at 48 kHz);
-    it now keeps `2 hops + maxFrames` queued (~53 ms with 512-frame pulls).
-    Slider-to-ear is that plus the ~85 ms OLA crossfade. The app passes
-    `maxFrames` 4096 (the locked-screen pull size), so it queues 6144
-    frames: 128 ms at 48 kHz, ~210 ms slider-to-ear.
-  - Master volume, applied after overlap-add, is now ramped across each hop.
-- **Design simplification found during verification**: 75% OLA overlap already
-  crossfades spectral changes over ~4 hops (~85 ms), so the per-hop gain ramp
-  originally planned is unnecessary.
-- **CPU** (2026-10-16): `VDSPRealFFT` (vDSP real DFT) is the default on Apple
-  platforms via `makeRealFFT`; `PureSwiftFFT` remains for Linux and as the
-  reference it is tested against. `NoiseStream`'s element loops run over raw
-  buffer pointers (Array subscripts on class storage were costing more than
-  the FFT). Stereo synthesis on an M-series Mac: ~5× → ~1000× realtime
-  (≈0.1% of a core), output bit-identical before/after the loop rewrite.
-  `PerformanceTests` prints the factor. On-device CPU still to be measured.
-- **App bootstrapped** (2026-10-16): `project.yml` (XcodeGen) defines the
-  iOS target; `Audio/StandaloneAudioHost.swift` drives the kit through an
-  `AVAudioSourceNode`, and a one-screen UI (`UI/RootView.swift`) plays the
-  built-in presets with a volume slider. CI compiles it on macOS. Covers most
-  of milestones 1 + 3. See `CLAUDE.md` for the Mac workflow.
-- **First run + equalizer painter** (2026-10-16): app runs in the iOS 27.1
-  simulator (Xcode 27.1) and the kit's 26 tests pass on macOS. Milestone 4's
-  `UI/EqualizerView.swift` paints the live phonon (line-painting across
-  skipped bands, per-band VoiceOver adjustables). Presets load normalized to
-  peak = 1 so the painter's 0 dB top matches; the kit's constant-power
-  normalization makes that inaudible.
-- **Debug builds stuttered** (found on first device run): at `-Onone` the
-  pure-Swift FFT ran at ~⅓ realtime, so the ring underran ~15×/s (68% of
-  output silent, measured with a mixer tap). The kit target now always builds
-  with `-O` (`Package.swift`); 0 underruns afterwards in the simulator.
-- **Interruptions + route changes** (2026-10-16): `StandaloneAudioHost`
-  pauses on interruption `.began`, resumes on `.ended` + `.shouldResume`
-  only if it was playing, and pauses on `.oldDeviceUnavailable` (which also
-  cancels a pending resume). Engine start is transactional. Verified with
-  synthetic notifications in the simulator; real calls/unplugs need a device.
-- **Explicit transport state machine** (2026-11-09): the play/pause policy
-  is now the pure `TransportMachine` and `TransportDriver` (kit,
-  `Transport/`); `StandaloneAudioHost` is just its AVFoundation
-  `TransportBackend`, and `PlayerModel.isPlaying` derives from its state.
-  The driver runs events to completion, in order, publishing each
-  resulting state: a backend or state callback calling back in can't
-  interleave with an effect and its result, and a Stop after a reentrant
-  Play still wins.
-  Tests: seeded, weighted random event sequences checked against safety
-  invariants (with a per-state/event coverage floor), outcome scenarios,
-  and driver tests against a fake backend (publish order, error
-  propagation, session-queue ordering, reentrancy, cleanup); waits time
-  out into failures instead of hanging. A mutation pass planting 19 bugs
-  (including everything three adversarial Codex reviews found) catches
-  all of them. Passes on macOS and on Linux (`swift:6.1-noble`, as CI).
-  Deliberate changes: a repeated `.began`, or one during an automatic
-  resume, keeps the resume armed. Verified on device (iPhone 13 Pro,
-  TestFlight build 37): calls, Siri, unplug mid-start, lock-screen toggle.
-- **Presets + saving** (2026-10-16): 8 built-ins in two groups — Noise
-  (White, Pink, Brown, Blue) and Ambience (Ocean [9 s tremolo], Rain, Fan,
-  Cabin; first guesses, to be tuned by ear). Violet and Grey were tried and
-  dropped to keep Noise to one line. `StoredPhonon`
-  (SwiftData, JSON blob) holds user sounds; `UI/PresetPicker.swift` shows labelled,
-  wrapping chip groups (+ My Sounds with Save; Rename/Delete on long-press). Brown is
-  the default. Loading a preset ignores its stored volume.
-- **Now-playing bar + sleep timer** (2026-10-16): `UI/NowPlayingBar.swift`
-  shows the sound name ("Custom" once painted), elapsed time and a sleep
-  timer (5/15/30/60/90 min) via system timer texts (no app ticks; nothing
-  redraws in the background). The timer fades over the last 15 s, then
-  stops; a manual pause cancels it, interruptions don't.
-- **Lock screen + last-sound restore** (2026-10-16): `NowPlayingController`
-  publishes a live-stream Now Playing item and handles play/pause/stop/toggle
-  (seek/skip disabled). Pause keeps the session active (stays Now Playing);
-  Stop, sleep-timer expiry and unplug release it. The current sound (painted
-  or not), selection and volume are saved on leaving the foreground and
-  restored on launch (no auto-play). Lock screen needs a device check.
-- **Since shipped**: swell (tremolo) controls (`UI/SwellControls.swift`),
-  the wide/landscape layout (`UI/RootView.swift`), Now Playing artwork
-  (`UI/SpectrumArtwork.swift`), App Intents (`App/Intents.swift`).
-- **Review pass** (2026-11-09):
-  - The worker sleeps half a hop when the ring lead is full instead of
-    polling every 2 ms (~94 wakeups/s at 48 kHz, was 500). Energy effect
-    not measured on device.
-  - `NoiseEngine.underrunCount` counts render calls padded with silence
-    (the first callbacks after `prepare` can count). The host logs it at
-    every engine stop (subsystem = bundle ID, category `audio`).
-  - The STFT frame grows with the output rate
-    (`DSPConstants.fftSize(forSampleRate:)`: 4096 up to 48 kHz, 8192 at
-    88.2/96 kHz, 16384 at 176.4/192 kHz; hop = N/4), so every band keeps
-    a bin on high-rate USB DACs. Mirrored in the Python reference.
-  - `Phonon.isPlayable` gates every decoded phonon (last sound and saved
-    sounds); a malformed saved sound is skipped instead of crashing.
-  - The sleep fade is squared (even loudness fall) instead of linear.
-  - Media-services reset: the host stops the transport and builds a fresh
-    `AVAudioEngine` on the next start. Compiles; never exercised.
-  - A Play pressed during an interruption that then resumes now follows
-    the resume's outcome (`PlayerModel.finishStart`), so Siri no longer
-    reports a failure while audio starts.
-  - `PlayerModel` takes its host (`AudioHost` protocol), clock and
-    defaults suite through `init`. `AppTests/` (target `ChromaNoiseTests`,
-    16 tests, in CI) covers the sleep timer, starting (including the
-    interruption-resume Play) and last-sound persistence.
-  - TestFlight build 46 carries everything above.
-  - CI also runs the kit tests on macOS, the only place the vDSP FFT runs.
-- **Open from that review**:
-  - Unplugging while playing: `.configurationChanged` restarts the engine
-    at once and `.oldDeviceUnavailable` arrives separately, so a restart
-    on the speaker may be audible before the stop. Check on device.
-  - Saved sounds: Delete has no confirmation; `context.save()` errors are
-    dropped; a store that fails to open is a `fatalError` at launch.
-  - Device checks (build 46): locked screen for 30 min with no underruns logged
-    after the first start; the fade curve by ear; a 96 kHz DAC if one is
-    to hand; a media-services reset (Settings > Developer > Reset Media
-    Services).
-- **Not started**: clone file ingestion and UI (the kit's analysis half
-  is done and tested).
+## Status (2026-11-10)
 
-## Context
+Shipped in 1.0 (TestFlight build 46): the 32-band painter, built-in and
+saved sounds, swell (tremolo), sleep timer, background playback with
+lock-screen controls and artwork, interruption and route handling, App
+Intents (Play, Pause, Sleep Timer), iPhone landscape and iPad layouts.
 
-**Why**: An iOS Swift app inspired by [ChromaDoze](https://github.com/pmarks-net/chromadoze) — an Android white-noise generator whose defining feature is a multi-band slider/spectrum painter that shapes white noise in real time. This plan was researched and designed before any code; the project will be built and shipped from a Mac with Xcode.
+Since build 46, not yet in a build:
 
-**Decisions**:
-- **Licensing**: Clean reimplementation. Re-derive the algorithm from public description; no copying GPL-3.0 source. Fresh iOS-native UI.
-- **Scope**: Full feature parity for v1 — sliders, real-time DSP, tremolo, background audio, lock-screen controls, "phonon" presets, sleep timer, plus a "clone this sound" feature as the differentiator.
-- **UI**: Native SwiftUI 32-bar vertical spectrum, drag-to-paint.
-- **Algorithm**: Departs from ChromaDoze where cleaner (streaming FFT overlap-add instead of DCT block shuffling).
-- **AUv3**: deferred to v2, but v1 is architected so it's a drop-in addition.
+- Saved sounds load with the bars they were painted with (only built-ins
+  are scaled to fill the painter).
+- The ring lead grows with the output rate above 48 kHz.
+- Turning swell on keeps a period the user chose, however fast.
+- The play button shows Pause as soon as a start is under way.
 
----
+**Not started**: clone file ingestion and UI (the kit's analysis half is
+done and tested), ChromaDoze preset import.
 
-## Algorithm: streaming FFT overlap-add
+## Open
 
-**ChromaDoze does**: pre-generate Float blocks via inverse DCT-II of a randomized spectrum, shuffle-bag-pick blocks, equal-power crossfade between blocks (93 ms), peak-normalize each chunk, time-reverse on right channel for stereo.
+- Unplugging while playing: `.configurationChanged` restarts the engine at
+  once and `.oldDeviceUnavailable` arrives separately, so a restart on the
+  speaker may be audible before the stop.
+- Saved sounds: Delete has no confirmation; `context.save()` errors are
+  dropped; a store that fails to open is a `fatalError` at launch.
+- The built-in sound-alikes (Ocean, Rain, Fan, Cabin) are first guesses,
+  to be tuned by ear.
+- CI runs on Xcode 16, which compiles only the fallback session activation,
+  not the iOS 27 asynchronous one the app ships with.
 
-**We do instead**: stream continuous white noise, STFT it, multiply bin magnitudes by a per-band gain LUT, ISTFT, overlap-add. Trades the block-shuffler+crossfade for one coherent pipeline. ~25 ms slider response (vs 100+ ms in ChromaDoze), no chunk-regen CPU spikes, cleaner code.
+## Device checks
 
-### Numeric spec
+None of these can be done in the simulator.
 
-- **Sample rate**: device-native (typically 48 kHz; 44.1 kHz on some routes; ~16 kHz over some Bluetooth profiles).
-- **FFT size N**: 4096 (doubled above 48 kHz so bins stay ≤ 11.7 Hz).
-- **Hop**: N/4 = 1024 (75% overlap) — required for proper Hann × Hann COLA.
-- **Window**: Hann on analysis and synthesis sides.
-- **Latency**: hop / sample_rate ≈ 21 ms @ 48 kHz; ~30–40 ms total end-to-end.
-- **Frequency resolution**: 11.7 Hz/bin @ 48 kHz.
-- **Bands**: 32, log-spaced 100 Hz – 20 kHz. `edgeFreq[i] = 100 * pow(200, i/32)`.
-- **Slider→amplitude curve**: `amp = 0.001 * pow(1000, v)` for `v ∈ [0,1]` (60 dB range).
-- **Band-to-bin mapping**: flat fill — `gain[k] = bandAmp[band(k)]`. Out-of-range bins gain = 0.
-- **Loudness normalization**: rescale `gain[]` so `Σ gain[k]² = constant`.
-- **Output safety net**: `tanh` soft-limit at master output.
-- **Stereo decorrelation**: independent white-noise streams per channel through the same gain LUT.
-- **Slider drag**: triple-buffered atomic snapshot; worker reads at hop boundaries; linear ramp `gain[]` across the hop to avoid zipper noise.
+- Locked screen for 30 min with no underruns logged after the first start
+  (subsystem = bundle ID, category `audio`, logged at every engine stop).
+- The sleep fade curve, by ear.
+- A 96 kHz DAC, if one is to hand: every band audible, and no underruns
+  with the screen locked (the ring assumes the pull grows with the rate, to
+  8192 frames at 96 kHz; that size is a guess).
+- A media-services reset (Settings > Developer > Reset Media Services):
+  the code path compiles but has never run.
+- Siri with the App Intents.
+- Stage Manager / Split View window resizing on iPad.
+- CPU and energy: Instruments on the render thread (no retains or mallocs),
+  Energy Log, under 3% CPU on an iPhone 13. The worker's half-hop idle
+  sleep has not been measured for energy.
 
-### Per-hop pipeline (worker thread)
+## Audio clone
 
-1. Generate 1024 fresh uniform-random samples per channel.
-2. Slide into the length-4096 input buffer; window with Hann.
-3. Forward real FFT (`vDSP.FFT<DSPSplitComplex>`, size 4096).
-4. Multiply real and imaginary parts by `gain[]`.
-5. Inverse FFT, scale by `1/(2N)`.
-6. Window with Hann (synthesis side).
-7. Overlap-add into output ring buffer.
-8. Apply tremolo LFO (see below) and master volume; `tanh` soft-limit.
+The planned differentiator: the user picks an audio file, we analyze its
+long-term spectrum and save a sound that approximates it. Entirely
+on-device.
 
-Render thread: single `memcpy` from ring buffer into the `AudioBufferList`. No allocations, no Swift collections, no locks.
+### Analysis (built: `Analysis/` in the kit)
 
-### Tremolo (replaces ChromaDoze's `period` field)
-
-ChromaDoze's `period` is a tremolo LFO period (10 ms – 60 s, paired with `minVol` for depth). Drives "ocean wave" / "breathing" presets. We keep the feature but redesign storage:
-
-- `tremoloPeriodSeconds: Float` — direct seconds, default 1.0, range 0.01–60.0.
-- `tremoloDepth: Float` — direct depth, default 0.0 (off), range 0.0–1.0. Equivalent to ChromaDoze's `1.0 - minVol`.
-- Bypass when `tremoloDepth < 0.001` or `tremoloPeriodSeconds < 0.001`.
-
-Implemented as a sine LFO multiplied across the post-overlap-add output buffer immediately before the tanh — one SIMD `vDSP_vmul`. Phase advances by `2π * hop / (period * sampleRate)` per hop. Legacy ChromaDoze JSON imports run the upstream piecewise mapping (slot 0–53 → seconds) at decode time.
-
----
-
-## Target & Tooling
-
-- iOS 17.2+ (SwiftData stability, Observation macro, modern SwiftUI).
-- Xcode 16+ (`@Previewable`); built and released with Xcode 27.1. Swift 5
-  language mode in both the app and the kit.
-- Frameworks: `AVFoundation`, `Accelerate`, `MediaPlayer`, `SwiftData`, `SwiftUI`.
-
----
-
-## Project Structure
-
-*Original design. The tree below was the plan; `CLAUDE.md` (Layout) and
-the Status section describe what was built (no `Services/`, `SpectrumModel`
-or clone UI; `PlayerModel`, `NowPlayingController`, `Intents` and the kit's
-`Transport/` were added).*
-
-Single Xcode app target with one internal SPM package (`ChromaNoiseKit`). The kit is **host-agnostic**: it imports neither `AVFoundation` nor `AVAudioSession`. This is what makes a v2 AUv3 extension a drop-in: the future AU target plugs `NoiseEngine.render(into:frameCount:)` into `AUAudioUnit.internalRenderBlock` instead of `AVAudioSourceNode.renderBlock`.
-
-```
-ChromaNoise/
-  ChromaNoise.xcodeproj
-  App/
-    ChromaNoiseApp.swift            // @main; boots host + SwiftData container
-    RootView.swift                  // TabView: Equalizer | Phonons | Timer
-    Info.plist                      // UIBackgroundModes: [audio]
-  UI/
-    EqualizerView.swift             // Canvas + DragGesture, 32-bar painter
-    BarSpectrum.swift               // pure render of [Float] -> Canvas
-    PhononListView.swift            // SwiftData @Query of saved presets
-    SleepTimerView.swift            // duration picker + countdown
-    NowPlayingBar.swift             // play/pause + master volume
-    Clone/
-      CloneSheet.swift              // .fileImporter + analysis sheet
-      DualSpectrumView.swift        // source PSD curve + 32-bar preview
-  Audio/
-    StandaloneAudioHost.swift       // AVAudioEngine + AVAudioSourceNode wrapper
-                                    //   - drives ChromaNoiseKit.NoiseEngine
-                                    //   - owns AVAudioSession lifecycle
-  Services/
-    AudioSessionCoordinator.swift   // AVAudioSession setup + interruption/route observers
-    NowPlayingService.swift         // MPNowPlayingInfoCenter + MPRemoteCommandCenter wiring
-    SleepTimerService.swift         // Task-based countdown + master-volume fade
-Packages/ChromaNoiseKit/
-  Sources/ChromaNoiseKit/
-    Models/
-      Phonon.swift                  // Codable: 32 amps + volume + tremolo fields + name
-      SpectrumModel.swift           // @Observable live state, atomic snapshot publisher
-      PhononStore.swift             // SwiftData @Model wrapper around Phonon JSON blob
-      Presets.swift                 // White/Pink/Brown/Blue 32-float arrays
-    DSP/
-      BandMath.swift                // freq table, slider->amp curve, band-to-bin LUT
-      GainLUT.swift                 // build/normalize gain[] from 32 band amps
-      Windows.swift                 // Hann table builder
-      Tremolo.swift                 // sine LFO + bypass guard
-    Audio/
-      NoiseStream.swift             // STFT pipeline: white noise -> spectrum-shape -> OLA
-      RenderRingBuffer.swift        // SPSC lock-free ring of Float frames
-      NoiseEngine.swift             // host-agnostic facade (see API below)
-    Analysis/                       // "Clone this sound" feature
-      AudioFileLoader.swift         // AVAudioFile + chunked PCM read; mono-sum
-      WelchAnalyzer.swift           // 16384-pt Welch's method, Hann 50% hop
-      BandAggregator.swift          // bin power -> mean per band -> sqrt -> slider value
-      SpectralFlatness.swift        // Wiener entropy for tonal-content detection
-      CloneNormalizer.swift         // peak-anchored normalization to slider 0.85
-  Tests/ChromaNoiseKitTests/
-    DSPTests.swift                  // FFT round-trip, COLA, gain normalization
-    PresetsTests.swift              // pink/brown spectral slope verification
-    WAVDumpTests.swift              // ear-check artifact generator
-    CloneRoundTripTests.swift       // synthetic white/pink WAV -> phonon within ±1.5 dB
-```
-
-Note: `AudioFileLoader` needs AVAudioFile; if we hold the "no AVFoundation in kit" rule strictly, the Analysis file-loading half lives in the app target and only the pure-DSP analysis (Welch, aggregation, flatness, normalization) stays in the kit. Decide at implementation time; the DSP halves must stay kit-side for testability.
-
-### `NoiseEngine` API (the host-agnostic facade)
-
-```swift
-public final class NoiseEngine {
-  public init()
-  public func prepare(sampleRate: Double, maxFrames: Int)
-  public func teardown()
-  public func render(left: UnsafeMutablePointer<Float>,
-                     right: UnsafeMutablePointer<Float>, frameCount: Int)
-  public var underrunCount: Int { get }
-  public func setBandGains(_ amps: [Float])         // 32 floats, post-curve
-  public func setMasterVolume(_ v: Float)
-  public func setTremolo(periodSeconds: Float, depth: Float)
-}
-```
-
-Both `StandaloneAudioHost` (v1) and a future `ChromaNoiseAU` (v2) are thin shells around this.
-
----
-
-## Audio (standalone host)
-
-`StandaloneAudioHost`:
-- Owns the `AVAudioEngine`, `AVAudioSourceNode`, and `AVAudioSession`.
-- `AVAudioFormat(standardFormatWithSampleRate: hw.sampleRate, channels: 2)`.
-- `AVAudioSourceNode(renderBlock:)` is a one-line bridge to `engine.render(into:frameCount:)`.
-- Observes `AVAudioEngine.changeNotification` and `AVAudioSession.routeChangeNotification`; on change, `teardown()` then `prepare(...)` with the new sample rate.
-- Worker thread: `Thread` with `qos: .userInteractive` running the per-hop STFT, pushing into `RenderRingBuffer`. Lives in the kit; started by `prepare()`.
-
----
-
-## Data Model & Persistence
-
-```swift
-struct Phonon: Codable, Hashable {
-  var name: String
-  var amps: [Float]               // 32, post-curve amplitudes
-  var masterVolume: Float         // 0..1
-  var tremoloPeriodSeconds: Float // 0.01..60.0
-  var tremoloDepth: Float         // 0..1
-}
-```
-
-- `@Model final class StoredPhonon { @Attribute(.unique) var id: UUID; var name: String; var data: Data /*JSON of Phonon*/ }` — JSON blob avoids schema migration on the 32-float array.
-- `@Observable final class SpectrumModel` mirrors Phonon fields + `isPlaying`. UI binds to it; the host pushes changes into `NoiseEngine` (no debounce — worker samples once per hop).
-
----
-
-## UI
-
-- **EqualizerView**: `Canvas` draws 32 bars; `DragGesture(minimumDistance: 0)` updates `SpectrumModel.amps`. Map `x` → band index, `y` → `v ∈ [0,1]`. When the touch jumps over bands, linearly interpolate from previous to current index (line-painting).
-- **PhononListView**: `List` with `@Query(sort: \StoredPhonon.name)`, swipe-to-delete, "Save current" action.
-- **Built-in presets**: White, Pink, Brown, Blue as non-deletable system phonons, plus a "Clone…" entry.
-- **Tremolo controls**: period (log-scale slider, 10 ms ↔ 60 s) and depth (0–100%) in a "Modulation" disclosure group.
-- **SleepTimerView**: `Picker` (5/15/30/60 min + custom); service ramps `masterVolume → 0` over the last 15 s then stops the engine.
-- **NowPlayingBar**: play/pause, master volume, timer remaining.
-
----
-
-## System Integration
-
-- `Info.plist`: `UIBackgroundModes = [audio]`.
-- `AVAudioSession` category `.playback`, mode `.default`, **no** `.mixWithOthers` — a mixable session can't become the Now Playing app, so lock-screen controls would never appear. (Could be a user toggle later: "play alongside other audio" at the cost of remote controls.)
-- `MPNowPlayingInfoCenter` with `MPNowPlayingInfoPropertyIsLiveStream = true`.
-- `MPRemoteCommandCenter`: enable play/pause/togglePlayPause/stop; disable seek/skip.
-- Handle `interruptionNotification` (pause on `.began`, resume on `.ended` + `.shouldResume`) and `routeChangeNotification` (pause on `.oldDeviceUnavailable`).
-- No wake locks on iOS: `.playback` + rendering audio + background mode is sufficient.
-
----
-
-## Built-in Presets (post-curve amplitudes per band)
-
-| Preset | Spectral shape | Per-band amp formula |
-|---|---|---|
-| White | flat | `1.0` |
-| Pink  | −3 dB/oct | `1 / sqrt(f_i / 100)` |
-| Brown | −6 dB/oct | `100 / f_i` |
-| Blue  | +3 dB/oct | `sqrt(f_i / 100)` |
-
-Sound-alikes (Ocean, Rain, Fan, Cabin) are defined in dB over log2(f) in
-`Presets.swift`: base slope + Gaussian bump + extra −6 dB/oct roll-off.
-
----
-
-## Audio Clone (the differentiator)
-
-User picks an audio file; we analyze its long-term spectrum and save a phonon that approximates it. Entirely on-device.
-
-### Algorithm
-
-- **Welch's method**: N_analysis = 16384 (~2.93 Hz/bin @ 48 kHz), Hann window, 50% hop (independence between frames > reconstruction quality here). Accumulate `|X[k]|²`, divide by frame count and window power.
-- **Duration**: minimum 3 s non-silent (else refuse), cap 120 s (centered slice, 5% head/tail trim).
-- **Band aggregation**: `P_band[i] = mean(|X[k]|²)` over the band's bins (mean, not sum — avoids bandwidth bias), `A_band[i] = sqrt(P_band[i])`.
+- **Welch's method**: N = 16384 (~2.93 Hz/bin @ 48 kHz), periodic Hann, 50%
+  hop (independent frames matter more than reconstruction here).
+  Accumulate `|X[k]|²`, divide by frame count and window power.
+- **Band aggregation**: mean of bin powers over each band (mean, not sum,
+  which would favor the wider high bands), then the square root.
 - **Slider inversion**: `v[i] = clamp((log10(A_band[i]/A_ref) + 3) / 3, 0, 1)`.
-- **Normalization**: peak-anchored — `A_ref = max(A_band) / 0.85`; bands >60 dB below peak floor to 0.
-- **Equal-loudness compensation**: off (user already perceived the source through their own ears).
-- **Stereo**: mono-sum `(L+R) * 0.5` before FFT.
-- **Tonal guard**: spectral flatness (Wiener entropy); < 0.05 → soft warning ("captures timbre, not tone"), don't reject.
-- **Silence guard**: reject if RMS < −60 dBFS.
+- **Normalization**: peak-anchored, `A_ref = max(A_band) / 0.85`; bands
+  more than 60 dB below the peak go to 0.
+- **Equal-loudness compensation**: off (the user already heard the source
+  through their own ears).
+- **Tonal guard**: spectral flatness (Wiener entropy) below 0.05 is a soft
+  warning ("captures timbre, not tone"), not a rejection.
+- **Silence guard**: reject below −60 dBFS RMS. **Minimum length**: 3 s.
 
-### Ingestion
+### Ingestion (to build, in the app target: it needs `AVAudioFile`)
 
-- `.fileImporter(allowedContentTypes: [.audio])` + security-scoped resource access.
-- `AVAudioFile` decodes wav/aiff/caf/m4a/mp3/ALAC/FLAC on iOS 17.2. Chunked reads into Float32 non-interleaved `AVAudioPCMBuffer`.
-- Bin→Hz mapping uses the file's own sample rate; no resampling.
-- Video-with-audio: defer to v1.1 (`AVAssetReader` path).
-- DRM files: surface the error; don't bypass.
+- `.fileImporter(allowedContentTypes: [.audio])` with security-scoped
+  resource access.
+- `AVAudioFile` decodes wav/aiff/caf/m4a/mp3/ALAC/FLAC; chunked reads into
+  Float32 non-interleaved `AVAudioPCMBuffer`.
+- Mono-sum `(L+R) * 0.5` before analysis.
+- Cap at 120 s: a centered slice, trimming 5% from head and tail.
+- Bin-to-Hz mapping uses the file's own sample rate; no resampling.
+- DRM files: surface the error; don't work around it.
 
-### UX
+### UX (to build)
 
 1. **+ → Clone a sound** → file picker.
 2. Analysis sheet: name, duration, cancelable progress.
-3. **DualSpectrumView**: source PSD as continuous curve (top) vs our 32 bars animating in (bottom) — makes the lossy quantization visible.
-4. Auto-name from filename stem; editable.
-5. **Audition** live before saving.
+3. Dual spectrum view: the source PSD as a continuous curve above our 32
+   bars animating in, so the lossy quantization is visible.
+4. Auto-name from the filename stem; editable.
+5. Audition live before saving.
 6. Tonal-warning banner when applicable.
 
----
+### Verification
 
-## Milestone Sequence
+Round-trip tests are ship-blockers: synthetic white/pink/brown → sounds
+within ±1.5 dB of theory (white and pink are covered by
+`CloneRoundTripTests`); a pure 1 kHz tone → flatness warning and band 17
+maxed; a 1 s clip → "too short"; a silent file → "no audible content".
 
-1. **Skeleton + silent engine** — Xcode project, SwiftData container, audio session, `StandaloneAudioHost` with zero-output source node; play/pause UI; stays alive in background.
-2. **DSP offline** — `NoiseStream` + Hann + `GainLUT`; XCTest writes a 10 s WAV. Validates COLA, gain shape, no clicks.
-3. **Live noise** — ring buffer wired via `NoiseEngine.render`; white preset hardcoded; listening test.
-4. **Equalizer UI** — drag-paint end-to-end with per-hop gain ramping.
-5. **Phonon persistence + built-in presets**.
-6. **Tremolo** — LFO at pipeline output; period/depth UI.
-7. **Audio clone** — picker, Welch analyzer, dual-spectrum preview, audition, save. Round-trip test is ship-blocker.
-8. **Now Playing + remotes** — lock-screen controls, interruption/route handling.
-9. **Sleep timer**.
-10. **Polish & ship** — Instruments pass, accessibility, icon, App Store metadata.
+## ChromaDoze preset import
 
----
+Not started. A ChromaDoze preset's `period` field is a tremolo slider slot
+(0–53 → 10 ms–60 s, piecewise), paired with `minVol` for depth
+(`depth = 1 − minVol`, bypassed above 0.999).
+`Phonon.legacyPeriodSeconds(slot:)` already holds the slot mapping. Clean
+reimplementation only: no upstream (GPL-3.0) code.
 
-## v2 Roadmap
+## Later
 
-- **AUv3 instrument extension** (~1 day given the host-agnostic engine): App Extension target, `AUAudioUnitFactory`, `ChromaNoiseAU: AUAudioUnit` whose `internalRenderBlock` calls `engine.render`; `AUParameterTree` with `band_00`…`band_31`, `master_volume`, `tremolo_period_seconds`, `tremolo_depth`, `bypass`; `fullState` serializes a Phonon snapshot; `requestViewController` returns a `UIHostingController` wrapping `EqualizerView`; Info.plist `NSExtension` + `AudioComponents` entry of type `aumu`. Footguns: host owns the audio session (never touch it from the AU); `fullState` may be set before `allocateRenderResources` (stage and apply); no Swift retain traffic in the render block.
-- **Multi-phonon layering** — sum gain LUTs at the multiply step.
+- **AUv3 instrument extension**: the kit is host-agnostic for this. An App
+  Extension target with an `AUAudioUnit` whose `internalRenderBlock` calls
+  `NoiseEngine.render`; an `AUParameterTree` with `band_00`…`band_31`,
+  `master_volume`, `tremolo_period_seconds`, `tremolo_depth`, `bypass`;
+  `fullState` serializes a `Phonon`; the view wraps `EqualizerView`;
+  Info.plist `AudioComponents` entry of type `aumu`. Footguns: the host
+  owns the audio session (never touch it from the AU); `fullState` may be
+  set before `allocateRenderResources` (stage and apply); no Swift retain
+  traffic in the render block.
+- **"Play alongside other audio" toggle**: a mixable session, at the cost
+  of lock-screen controls (a mixable session can't be the Now Playing app).
+- **Multi-sound layering**: sum gain LUTs at the multiply step.
 - **Spatial audio** via `AVAudioEnvironmentNode`.
-- **App Intents / Siri / Shortcuts** — shipped in 1.0: Play (any built-in or
-  saved sound), Pause, Sleep Timer. Needs a device check with Siri.
 - **Live Activity / Dynamic Island** sleep-timer countdown.
-- **Watch companion**; **video-with-audio import** for clone.
-- **Visualizer** (idea stage, 2026-10-16). A literal noise waveform is dull;
-  show the sound's *shape*. Steps: (1) "breathing" 32-band view of live
-  energy (moves with tremolo and the sleep fade); (2) spectral waterfall —
-  a ring-buffer texture, one row per frame, colored with the band palette —
-  as the large-screen centerpiece; (3) maybe a generative "aurora". Layout:
-  side-by-side on iPad / foldable inner display (needs the resizable-layout
-  work), full-screen ambient mode on phones. Constraints: no extra FFT — the
-  worker already has each hop's spectrum, so publish a 32-band snapshot via
-  a lock-free handoff (render-thread rule and host-agnostic kit unchanged);
-  sleep-appropriate (dim, slow, black background, capped frame rate,
-  auto-dim). Prior art to study (check licenses — clean-room):
-  barbulescualex/MetalAudioVisualizer, hotpaw2's MyMetalWaterfall gist,
-  sandner-art/Audio-Shader-Studio (MIT), Keith-43/MuVis.
-- **Resizable / landscape layout** — shipped in 1.0 (iPhone landscape,
-  iPad all orientations). Still to check by hand: Stage Manager / Split
-  View window resizing, which the simulator tooling can't drive.
-
----
-
-## Risks & Unknowns
-
-- **COLA correctness**: Hann × Hann is COLA only at hop ≤ N/4; we use hop = N/4 = 1024. Unit-test the constant-sum property (±1e-5).
-- **Render-thread Swift safety**: only `UnsafeMutablePointer<Float>` + `Unmanaged.passUnretained` in the render path; verify zero `swift_retain`/`malloc` with Instruments.
-- **Constant-power divide-by-zero**: clamp denominator; all-zero spectrum = silence.
-- **Sample-rate switches** (Bluetooth ~16 kHz): rebuild LUT + window on `AVAudioEngineConfigurationChange`.
-- **AU-readiness discipline**: kit must not import `AVFoundation` — enforce with a CI grep test.
-- **Clone correctness**: golden-file round-trip tests (white → flat, pink → −3 dB/oct, ±1.5 dB) are ship-blockers.
-- **First-frame click**: pre-fill 2 hops of silence before unmuting.
-- **Worker priority when backgrounded**: `qos: .userInteractive`; verify no underruns with screen locked.
-- **CPU estimate unverified** (~2–3% iPhone 13 back-of-envelope); milestone-3 profile is the real check.
-- **SwiftData**: require iOS 17.2+.
-
----
-
-## Verification Plan
-
-- **DSP** (XCTest): COLA constant-sum ±1e-5; FFT round-trip ±1e-5; single-band spectrum concentration; `Σ gain²` constant ±1%; pink/brown slope ±0.5 dB/oct; tremolo bypass exact at depth 0; WAV dump helpers for ear-checks.
-- **Clone round-trip**: white/pink/brown synthetic WAVs → phonons within ±1.5 dB of theory; pure 1 kHz tone → flatness warning + band 17 maxed; 1 s clip → "too short"; silent file → "no audible content."
-- **Realtime safety**: Instruments Time Profiler + System Trace on the render thread — zero retains/mallocs.
-- **Background audio**: on-device, 30 min locked-screen playback; interruption resume.
-- **Lock-screen controls**: physical device.
-- **Battery/CPU**: Energy Log, < 3% CPU target on iPhone 13.
-- **Subjective parity**: A/B against ChromaDoze on Android with matched spectra + converted tremolo settings.
-
----
-
-## Research provenance (for future sessions)
-
-Findings verified against upstream `pmarks-net/chromadoze` (read-once for understanding; no code copied):
-- Upstream uses inverse DCT-II (JTransforms), chunk sizes 8192/65536, 4095-sample equal-power crossfade, flat band-to-bin fill, uniform XORShift randomization, per-chunk peak normalization, time-reversed right channel.
-- Upstream `period` field = per-phonon tremolo LFO period slider (0–53 → 10 ms–60 s piecewise), paired with `minVol` depth; bypass at `minVol > 0.999`.
-- AUv3 remains the current iOS plug-in API (2026); worker + SPSC ring is the canonical AU threading idiom; hosts call render with 32–4096 frames.
+- **Watch companion**; **video-with-audio import** for clone
+  (`AVAssetReader`).
+- **Visualizer** (idea stage). A literal noise waveform is dull; show the
+  sound's *shape*. Steps: (1) a "breathing" 32-band view of live energy
+  (moves with swell and the sleep fade); (2) a spectral waterfall, one row
+  per frame, colored with the band palette, as the large-screen
+  centerpiece; (3) maybe a generative "aurora". Side-by-side on iPad and
+  the foldable inner display, full-screen ambient mode on phones.
+  Constraints: no extra FFT (the worker already has each hop's spectrum, so
+  publish a 32-band snapshot through a lock-free handoff; render-thread
+  rule and host-agnostic kit unchanged); sleep-appropriate (dim, slow,
+  black background, capped frame rate, auto-dim). Prior art to study
+  (check licenses; clean-room): barbulescualex/MetalAudioVisualizer,
+  hotpaw2's MyMetalWaterfall gist, sandner-art/Audio-Shader-Studio (MIT),
+  Keith-43/MuVis.
+- **Subjective A/B** against ChromaDoze on Android with matched spectra.

@@ -25,7 +25,7 @@ audio session and the render contract is the same raw-pointer pull).
 ## Verification
 
 The algorithm is specified by `tools/reference_dsp.py` at the repo root — a
-numpy implementation whose 18 checks all pass at machine precision. The tests
+numpy implementation whose checks all pass at machine precision. The tests
 here mirror those checks; if Swift and Python disagree, Python wins until
 proven otherwise.
 
@@ -33,10 +33,10 @@ proven otherwise.
 swift test -c release   # release! the synthesis tests run ~1000 FFTs
 ```
 
-`PureSwiftFFT` is deliberately dependency-free and portable. If profiling on
-device shows the worker thread matters (it shouldn't — the budget is 2 FFTs
-per 21 ms hop), swap in a vDSP-backed `RealFFT` conformance behind the same
-protocol.
+`makeRealFFT` picks the FFT: `VDSPRealFFT` (vDSP) on Apple platforms,
+`PureSwiftFFT` elsewhere. `PureSwiftFFT` is deliberately dependency-free and
+portable: it is what Linux runs and the reference the vDSP one is tested
+against.
 
 ## Integration notes for the app target
 
