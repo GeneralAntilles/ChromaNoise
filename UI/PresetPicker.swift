@@ -28,6 +28,8 @@ struct PresetPicker: View {
 
     @State private var nameEditor: NameEditor?
     @State private var draftName = ""
+    /// The saved sound awaiting a delete confirmation.
+    @State private var pendingDelete: StoredPhonon?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -53,9 +55,7 @@ struct PresetPicker: View {
                             nameEditor = .renaming(stored)
                         }
                         Button("Delete", systemImage: "trash", role: .destructive) {
-                            model.savedPresetDeleted(id: stored.id)
-                            context.delete(stored)
-                            persist()
+                            pendingDelete = stored
                         }
                     }
                 }
@@ -108,6 +108,16 @@ struct PresetPicker: View {
             }
             .disabled(trimmedDraft.isEmpty)
         }
+        .confirmationDialog(pendingDelete.map { "Delete \u{201C}\($0.name)\u{201D}?" } ?? "",
+                            isPresented: Binding(get: { pendingDelete != nil },
+                                                 set: { if !$0 { pendingDelete = nil } }),
+                            titleVisibility: .visible,
+                            presenting: pendingDelete) { stored in
+            Button("Delete", role: .destructive) { delete(stored) }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("This can\u{2019}t be undone.")
+        }
     }
 
     private func section<Chips: View>(_ title: String, @ViewBuilder chips: () -> Chips) -> some View {
@@ -155,6 +165,12 @@ struct PresetPicker: View {
         // Not the default style: in a Form row that makes a tap anywhere in
         // the row fire every such button (Update would also open Save).
         .buttonStyle(.borderless)
+    }
+
+    private func delete(_ stored: StoredPhonon) {
+        model.savedPresetDeleted(id: stored.id)
+        context.delete(stored)
+        persist()
     }
 
     private func update(_ stored: StoredPhonon) {

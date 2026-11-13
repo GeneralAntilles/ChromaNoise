@@ -10,11 +10,10 @@ import SwiftUI
 enum ScreenshotScenario: String {
     /// A painted saved sound, playing (light).
     case paint
-    /// Ocean playing with the swell section in view (dark).
-    case swell
-    /// Brown playing with a sleep timer running (dark).
+    /// Cabin playing with a sleep timer counting down (dark).
     case sleep
-    /// Landscape painter (light); the UI test rotates the device.
+    /// Another saved sound in the landscape painter (light); the UI test
+    /// rotates the device.
     case landscape
 
     static let current: ScreenshotScenario? = {
@@ -26,7 +25,7 @@ enum ScreenshotScenario: String {
     var colorScheme: ColorScheme {
         switch self {
         case .paint, .landscape: .light
-        case .swell, .sleep: .dark
+        case .sleep: .dark
         }
     }
 
@@ -35,7 +34,10 @@ enum ScreenshotScenario: String {
         Phonon(name: "Evening Rain", amps: curve { t in
             0.82 - 0.38 * t + 0.12 * exp(-pow((t - 0.25) / 0.1, 2)) + 0.05 * sin(9 * t)
         }),
-        Phonon(name: "Deep Focus", amps: curve { t in 0.9 - 0.55 * t }),
+        // A low hum with a soft shelf in the upper mids.
+        Phonon(name: "Deep Focus", amps: curve { t in
+            0.55 + 0.3 * exp(-pow((t - 0.08) / 0.12, 2)) + 0.22 * exp(-pow((t - 0.62) / 0.14, 2)) - 0.35 * t
+        }),
     ]
 
     static func seed(_ context: ModelContext) {
@@ -54,20 +56,25 @@ enum ScreenshotScenario: String {
         case .paint, .landscape:
             let saved = (try? StoredPhonon.container.mainContext.fetch(
                 FetchDescriptor<StoredPhonon>(sortBy: [SortDescriptor(\.createdAt)]))) ?? []
-            if let first = saved.first, let phonon = first.phonon {
-                model.load(phonon, as: .saved(id: first.id))
-            }
-        case .swell:
-            if let ocean = model.presets.first(where: { $0.name == "Ocean" }) {
-                model.load(ocean, as: .builtIn(name: ocean.name))
+            if let stored = self == .paint ? saved.first : saved.last, let phonon = stored.phonon {
+                model.load(phonon, as: .saved(id: stored.id))
             }
         case .sleep:
-            if let brown = model.presets.first(where: { $0.name == "Brown" }) {
-                model.load(brown, as: .builtIn(name: brown.name))
+            if let cabin = model.presets.first(where: { $0.name == "Cabin" }) {
+                model.load(cabin, as: .builtIn(name: cabin.name))
             }
         }
         await model.play()
         if self == .sleep { model.setSleepTimer(minutes: 30) }
+    }
+
+    /// `date` as the clock would show it if now were 9:41, the time
+    /// tools/screenshots.sh puts in the status bar, so "Stops at" agrees.
+    static func shownTime(_ date: Date) -> Date {
+        guard current != nil,
+              let nineFortyOne = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: .now)
+        else { return date }
+        return date.addingTimeInterval(nineFortyOne.timeIntervalSinceNow)
     }
 
     /// 32 band amps from a slider-position curve over t ∈ 0…1.

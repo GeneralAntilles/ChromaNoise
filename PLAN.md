@@ -28,8 +28,8 @@ done and tested), ChromaDoze preset import.
 - Unplugging while playing: `.configurationChanged` restarts the engine at
   once and `.oldDeviceUnavailable` arrives separately, so a restart on the
   speaker may be audible before the stop.
-- Saved sounds: Delete has no confirmation; `context.save()` errors are
-  dropped; a store that fails to open is a `fatalError` at launch.
+- Saved sounds: `context.save()` errors are dropped; a store that fails
+  to open is a `fatalError` at launch.
 - The built-in sound-alikes (Ocean, Rain, Fan, Cabin) are first guesses,
   to be tuned by ear.
 - CI runs on Xcode 16, which compiles only the fallback session activation,
