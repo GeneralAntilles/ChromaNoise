@@ -13,20 +13,8 @@ final class ScreenshotTests: XCTestCase {
     @MainActor
     func testScreenshots() {
         shoot("01-paint", scene: "paint")
-        shoot("02-swell", scene: "swell") { app in
-            // Scroll the form (not the painter) until the swell controls show.
-            let period = app.sliders["Swell period"]
-            for _ in 0..<3 where !period.isHittable {
-                let start = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
-                start.press(forDuration: 0.05,
-                            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.42)))
-            }
-        }
-        shoot("03-sleep", scene: "sleep") { app in
-            app.buttons["Sleep timer"].tap()
-            _ = app.buttons["30 min"].waitForExistence(timeout: 5)
-        }
-        shoot("04-landscape", scene: "landscape", orientation: .landscapeLeft)
+        shoot("02-sleep", scene: "sleep")
+        shoot("03-landscape", scene: "landscape", orientation: .landscapeLeft)
     }
 
     @MainActor

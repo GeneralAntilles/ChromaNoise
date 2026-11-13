@@ -60,7 +60,7 @@ struct SwellControls: View {
     }
 
     private var periodLabel: String {
-        let p = model.tremoloPeriodSeconds
+        let p = model.shownTremoloPeriodSeconds
         return p < 10 ? String(format: "%.1f s", p) : "\(Int(p.rounded())) s"
     }
 
@@ -69,7 +69,7 @@ struct SwellControls: View {
         let lo = log(Self.periodRange.lowerBound), hi = log(Self.periodRange.upperBound)
         return Binding(
             get: {
-                let p = min(max(model.tremoloPeriodSeconds, Self.periodRange.lowerBound),
+                let p = min(max(model.shownTremoloPeriodSeconds, Self.periodRange.lowerBound),
                             Self.periodRange.upperBound)
                 return (log(p) - lo) / (hi - lo)
             },

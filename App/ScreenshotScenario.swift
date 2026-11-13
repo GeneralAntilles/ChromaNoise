@@ -68,11 +68,12 @@ enum ScreenshotScenario: String {
         if self == .sleep { model.setSleepTimer(minutes: 30) }
     }
 
-    /// `date` as the clock would show it if now were 9:41, the time
-    /// tools/screenshots.sh puts in the status bar, so "Stops at" agrees.
+    /// `date` as the clock would show it if now were 9:41:30, mid-way
+    /// through the 9:41 tools/screenshots.sh puts in the status bar, so
+    /// "Stops at" agrees (a 30-minute timer reads 10:11).
     static func shownTime(_ date: Date) -> Date {
         guard current != nil,
-              let nineFortyOne = Calendar.current.date(bySettingHour: 9, minute: 41, second: 0, of: .now)
+              let nineFortyOne = Calendar.current.date(bySettingHour: 9, minute: 41, second: 30, of: .now)
         else { return date }
         return date.addingTimeInterval(nineFortyOne.timeIntervalSinceNow)
     }

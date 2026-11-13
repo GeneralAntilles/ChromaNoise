@@ -52,10 +52,17 @@ xctestrun=$(ls "$DERIVED"/Build/Products/*.xctestrun | head -n 1)
 # to screenshots/<device>/ (an unfolded Duo's to "<device> (inner)/").
 shoot() {
     local device=$1 udid=$2 pass=$3
+    # Apple's marketing status bar: 9:41 on Tuesday, January 9 (the iPad
+    # shows the date, and 2024's falls on a Tuesday), full battery without
+    # the charging bolt. The time is an ISO date in the Mac's zone, which
+    # the simulator shares.
+    local zone
+    zone=$(date +%z)
     xcrun simctl status_bar "$udid" override \
-        --time "9:41" --dataNetwork wifi --wifiMode active --wifiBars 3 \
+        --time "2024-01-09T09:41:00.000${zone:0:3}:${zone:3:2}" \
+        --dataNetwork wifi --wifiMode active --wifiBars 3 \
         --cellularMode active --cellularBars 4 --operatorName "" \
-        --batteryState charged --batteryLevel 100
+        --batteryState discharging --batteryLevel 100
 
     result="$WORK/$udid-$pass.xcresult"
     xcodebuild test-without-building -quiet \
@@ -122,6 +129,14 @@ for runtime, devs in json.load(sys.stdin)['devices'].items():
             print(d['udid']); sys.exit()
 sys.exit('no simulator named ' + name)" "$device")
 
+    # 12-hour time ("9:41", not "09:41"), whatever the Mac's setting: the
+    # simulator copies 24-hour time from the Mac, and reads its preferences
+    # file only at boot.
+    prefs=~/Library/Developer/CoreSimulator/Devices/$udid/data/Library/Preferences/.GlobalPreferences.plist
+    if [ "$(plutil -extract AppleICUForce24HourTime raw "$prefs" 2>/dev/null)" = true ]; then
+        xcrun simctl shutdown "$udid" 2>/dev/null || true
+        plutil -replace AppleICUForce24HourTime -bool NO "$prefs"
+    fi
     xcrun simctl boot "$udid" 2>/dev/null || true
     xcrun simctl bootstatus "$udid" -b >/dev/null
     if [[ "$device" == *Duo* ]] && command -v duoctl >/dev/null; then

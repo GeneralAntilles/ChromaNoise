@@ -8,6 +8,7 @@ Credentials: ASC_KEY_ID and ASC_ISSUER_ID from the environment or
     tools/asc.py app                  # app record id for the bundle ID
     tools/asc.py builds               # recent builds and their processing state
     tools/asc.py wait-build 42        # wait until build 42 is processed
+    tools/asc.py listing              # store listing as entered in App Store Connect
 """
 import base64
 import json
@@ -105,6 +106,56 @@ def builds(version: str | None = None) -> list:
     return get("/builds", **params)["data"]
 
 
+def show(title: str, attributes: dict, keys: list[str]) -> None:
+    print(f"== {title}")
+    for key in keys:
+        value = attributes.get(key)
+        if isinstance(value, str) and "\n" in value:
+            print(f"  {key}:")
+            for line in value.splitlines():
+                print(f"    {line}")
+        else:
+            print(f"  {key}: {value}")
+
+
+def listing() -> None:
+    """Everything the store page is built from, read-only."""
+    app = app_id()
+    show("App", get(f"/apps/{app}")["data"]["attributes"],
+         ["name", "bundleId", "sku", "primaryLocale", "contentRightsDeclaration"])
+    for info in get(f"/apps/{app}/appInfos", include="primaryCategory,secondaryCategory")["data"]:
+        rel = info["relationships"]
+        cats = [(rel.get(k, {}).get("data") or {}).get("id") for k in ("primaryCategory", "secondaryCategory")]
+        show(f"App info {info['id']}", info["attributes"] | {"categories": cats},
+             ["state", "appStoreAgeRating", "categories"])
+        for loc in get(f"/appInfos/{info['id']}/appInfoLocalizations")["data"]:
+            show(f"App info ({loc['attributes']['locale']})", loc["attributes"],
+                 ["name", "subtitle", "privacyPolicyUrl", "privacyChoicesUrl"])
+        age = get(f"/appInfos/{info['id']}/ageRatingDeclaration")["data"]
+        answered = {k: v for k, v in (age or {}).get("attributes", {}).items() if v not in (None, "NONE", False)}
+        print(f"== Age rating answers (non-default): {answered or 'none'}")
+    for version in get(f"/apps/{app}/appStoreVersions")["data"]:
+        vid = version["id"]
+        show(f"Version {version['attributes']['versionString']}", version["attributes"],
+             ["platform", "appStoreState", "copyright", "releaseType", "usesIdfa"])
+        build = get(f"/appStoreVersions/{vid}/build")["data"]
+        print(f"  build: {build['attributes']['version'] if build else None}")
+        for loc in get(f"/appStoreVersions/{vid}/appStoreVersionLocalizations")["data"]:
+            a = loc["attributes"]
+            show(f"Version text ({a['locale']})", a,
+                 ["description", "keywords", "promotionalText", "supportUrl", "marketingUrl", "whatsNew"])
+            for shots in get(f"/appStoreVersionLocalizations/{loc['id']}/appScreenshotSets")["data"]:
+                count = len(get(f"/appScreenshotSets/{shots['id']}/appScreenshots")["data"])
+                print(f"  screenshots {shots['attributes']['screenshotDisplayType']}: {count}")
+        review = get(f"/appStoreVersions/{vid}/appStoreReviewDetail")["data"]
+        if review:
+            a = review["attributes"]
+            show("Review details", a | {"contactEmail": "(set)" if a.get("contactEmail") else None},
+                 ["contactFirstName", "contactLastName", "contactEmail", "demoAccountRequired", "notes"])
+        else:
+            print("== Review details: none")
+
+
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "builds"
     if command == "app":
@@ -116,6 +167,8 @@ def main():
         for build in rows:
             a = build["attributes"]
             print(f"build {a['version']:>5}  {a['processingState']:<11} uploaded {a['uploadedDate']}")
+    elif command == "listing":
+        listing()
     elif command == "wait-build" and len(sys.argv) == 3:
         version, deadline = sys.argv[2], time.time() + 60 * 60
         while time.time() < deadline:

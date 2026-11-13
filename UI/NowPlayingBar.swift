@@ -72,7 +72,7 @@ struct NowPlayingBar: View {
                 if let end = model.sleepTimer?.end, model.isPlaying {
                     // With a timer set, when it ends matters more than how
                     // long it has played.
-                    Text("Stops at \(end.formatted(date: .omitted, time: .shortened))")
+                    Text("Stops at \(Self.clockTime(end).formatted(date: .omitted, time: .shortened))")
                 } else if let started = model.playStartedAt {
                     Text("Playing \(Text(started, style: .timer))")
                 } else if model.isPlayingOrStarting {
@@ -177,6 +177,16 @@ struct NowPlayingBar: View {
         .accessibilityValue(model.sleepTimer.map {
             "Ends at \($0.end.formatted(date: .omitted, time: .shortened))"
         } ?? "Off")
+    }
+
+    /// A wall-clock time for display; staged screenshots shift it to match
+    /// their 9:41 status bar.
+    private static func clockTime(_ date: Date) -> Date {
+        #if DEBUG
+        ScreenshotScenario.shownTime(date)
+        #else
+        date
+        #endif
     }
 
     private var timerSelection: Binding<Int?> {

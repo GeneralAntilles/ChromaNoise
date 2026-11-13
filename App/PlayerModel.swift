@@ -61,7 +61,7 @@ final class PlayerModel {
             // exactly the default) is kept.
             if phonon.tremoloDepth < 0.001, newValue >= 0.001,
                phonon.tremoloPeriodSeconds == Self.unsetTremoloPeriod {
-                phonon.tremoloPeriodSeconds = 8
+                phonon.tremoloPeriodSeconds = Self.swellStartPeriod
             }
             phonon.tremoloDepth = newValue
         }
@@ -69,6 +69,16 @@ final class PlayerModel {
 
     /// `Phonon`'s default period: what a sound that never had swell holds.
     private static let unsetTremoloPeriod: Float = 1
+    /// Where swell starts on a sound that never had it.
+    private static let swellStartPeriod: Float = 8
+
+    /// The period the swell controls show: while swell is off on a sound
+    /// that never had it, the period turning it on will start at, rather
+    /// than the unused 1 s default.
+    var shownTremoloPeriodSeconds: Float {
+        phonon.tremoloDepth < 0.001 && phonon.tremoloPeriodSeconds == Self.unsetTremoloPeriod
+            ? Self.swellStartPeriod : phonon.tremoloPeriodSeconds
+    }
 
     var tremoloPeriodSeconds: Float {
         get { phonon.tremoloPeriodSeconds }
