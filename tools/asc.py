@@ -9,8 +9,12 @@ Credentials: ASC_KEY_ID and ASC_ISSUER_ID from the environment or
     tools/asc.py builds               # recent builds and their processing state
     tools/asc.py wait-build 42        # wait until build 42 is processed
     tools/asc.py listing              # store listing as entered in App Store Connect
+    tools/asc.py keywords "a,b,c"     # set the editable version's keywords
+    tools/asc.py upload-screenshots screenshots/framed
+                                      # replace the editable version's screenshots
 """
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -73,22 +77,31 @@ def token() -> str:
     return f"{header}.{payload}.{b64url(der_to_raw(der))}"
 
 
-def get(path: str, **params) -> dict:
+def request(method: str, path: str, body: dict | None = None, **params) -> dict:
     url = f"{API}{path}"
     if params:
         url += "?" + urllib.parse.urlencode(params)
+    data = json.dumps(body).encode() if body is not None else None
     # Retry network hiccups (timeouts, resets); API errors fail at once.
     for attempt in range(4):
-        request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token()}"})
+        headers = {"Authorization": f"Bearer {token()}"}
+        if data is not None:
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
-                return json.load(response)
+            with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read()
+                return json.loads(raw) if raw else {}
         except urllib.error.HTTPError as error:
             sys.exit(f"App Store Connect API {error.code}: {error.read().decode()[:500]}")
         except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
             if attempt == 3:
                 sys.exit(f"App Store Connect unreachable: {error}")
             time.sleep(5 * 2 ** attempt)
+
+
+def get(path: str, **params) -> dict:
+    return request("GET", path, **params)
 
 
 def app_id() -> str:
@@ -156,6 +169,114 @@ def listing() -> None:
             print("== Review details: none")
 
 
+def editable_localization() -> dict:
+    """The en-US text of the version still being prepared (the one whose
+    listing can change)."""
+    versions = get(f"/apps/{app_id()}/appStoreVersions",
+                   **{"filter[appStoreState]": "PREPARE_FOR_SUBMISSION,DEVELOPER_REJECTED,REJECTED"})["data"]
+    if not versions:
+        sys.exit("No version is open for editing")
+    for loc in get(f"/appStoreVersions/{versions[0]['id']}/appStoreVersionLocalizations")["data"]:
+        if loc["attributes"]["locale"] == "en-US":
+            return loc
+    sys.exit("The editable version has no en-US localization")
+
+
+def set_keywords(keywords: str) -> None:
+    if len(keywords) > 100:
+        sys.exit(f"Keywords are {len(keywords)} characters; the limit is 100")
+    loc = editable_localization()
+    print(f"was: {loc['attributes']['keywords']}")
+    request("PATCH", f"/appStoreVersionLocalizations/{loc['id']}", {"data": {
+        "type": "appStoreVersionLocalizations", "id": loc["id"],
+        "attributes": {"keywords": keywords}}})
+    print(f"now: {keywords}")
+
+
+# screenshots/<device>/ folder -> App Store Connect display type. The Duo's
+# folded and unfolded sets share one type.
+DISPLAY_TYPES = {
+    "iPhone 17": "APP_IPHONE_61",
+    "iPad Pro 13-inch (M5)": "APP_IPAD_PRO_3GEN_129",
+    "iPhone Duo": "APP_IPHONE_DUO",
+    "iPhone Duo (inner)": "APP_IPHONE_DUO",
+}
+
+
+def upload_screenshot(set_id: str, path: str) -> str:
+    """Reserve, upload and commit one screenshot; returns its id."""
+    data = open(path, "rb").read()
+    reserved = request("POST", "/appScreenshots", {"data": {
+        "type": "appScreenshots",
+        "attributes": {"fileName": os.path.basename(path), "fileSize": len(data)},
+        "relationships": {"appScreenshotSet": {"data": {"type": "appScreenshotSets", "id": set_id}}}}})["data"]
+    for op in reserved["attributes"]["uploadOperations"]:
+        chunk = data[op["offset"]:op["offset"] + op["length"]]
+        headers = {h["name"]: h["value"] for h in op.get("requestHeaders", [])}
+        req = urllib.request.Request(op["url"], data=chunk, method=op["method"], headers=headers)
+        with urllib.request.urlopen(req, timeout=120):
+            pass
+    request("PATCH", f"/appScreenshots/{reserved['id']}", {"data": {
+        "type": "appScreenshots", "id": reserved["id"],
+        "attributes": {"uploaded": True, "sourceFileChecksum": hashlib.md5(data).hexdigest()}}})
+    return reserved["id"]
+
+
+def wait_until_processed(ids: list[str]) -> None:
+    """Apple checks each upload; a failed one would leave a hole in the set."""
+    deadline = time.time() + 10 * 60
+    pending = set(ids)
+    while pending:
+        for shot_id in sorted(pending):
+            state = get(f"/appScreenshots/{shot_id}")["data"]["attributes"]["assetDeliveryState"]
+            if state["state"] == "COMPLETE":
+                pending.discard(shot_id)
+            elif state["state"] == "FAILED":
+                sys.exit(f"Screenshot {shot_id} failed processing: {state.get('errors')}")
+        if pending:
+            if time.time() > deadline:
+                sys.exit(f"Timed out waiting for {len(pending)} screenshots to process")
+            time.sleep(5)
+
+
+def upload_screenshots(root: str) -> None:
+    """Replaces each display type's screenshots with the PNGs under
+    root/<device>/, in file-name order. The new set is uploaded and
+    processed before the old one is removed, so a failure midway leaves the
+    old screenshots in place."""
+    loc = editable_localization()
+    sets = {s["attributes"]["screenshotDisplayType"]: s["id"]
+            for s in get(f"/appStoreVersionLocalizations/{loc['id']}/appScreenshotSets")["data"]}
+    files: dict[str, list[str]] = {}
+    for device, display_type in DISPLAY_TYPES.items():
+        folder = os.path.join(root, device)
+        if os.path.isdir(folder):
+            files.setdefault(display_type, []).extend(
+                os.path.join(folder, f) for f in sorted(os.listdir(folder)) if f.endswith(".png"))
+    if not files:
+        sys.exit(f"No screenshots under {root}/ ({', '.join(DISPLAY_TYPES)})")
+    for display_type, paths in files.items():
+        if display_type not in sets:
+            sets[display_type] = request("POST", "/appScreenshotSets", {"data": {
+                "type": "appScreenshotSets",
+                "attributes": {"screenshotDisplayType": display_type},
+                "relationships": {"appStoreVersionLocalization": {"data": {
+                    "type": "appStoreVersionLocalizations", "id": loc["id"]}}}}})["data"]["id"]
+        set_id = sets[display_type]
+        old = [s["id"] for s in get(f"/appScreenshotSets/{set_id}/appScreenshots")["data"]]
+        print(f"==> {display_type}: uploading {len(paths)}, replacing {len(old)}", flush=True)
+        new = []
+        for path in paths:
+            new.append(upload_screenshot(set_id, path))
+            print(f"    {path}", flush=True)
+        wait_until_processed(new)
+        for shot_id in old:
+            request("DELETE", f"/appScreenshots/{shot_id}")
+        # Display order: the new screenshots, in file-name order.
+        request("PATCH", f"/appScreenshotSets/{set_id}/relationships/appScreenshots", {
+            "data": [{"type": "appScreenshots", "id": i} for i in new]})
+
+
 def main():
     command = sys.argv[1] if len(sys.argv) > 1 else "builds"
     if command == "app":
@@ -169,6 +290,10 @@ def main():
             print(f"build {a['version']:>5}  {a['processingState']:<11} uploaded {a['uploadedDate']}")
     elif command == "listing":
         listing()
+    elif command == "keywords" and len(sys.argv) == 3:
+        set_keywords(sys.argv[2])
+    elif command == "upload-screenshots" and len(sys.argv) == 3:
+        upload_screenshots(sys.argv[2])
     elif command == "wait-build" and len(sys.argv) == 3:
         version, deadline = sys.argv[2], time.time() + 60 * 60
         while time.time() < deadline:

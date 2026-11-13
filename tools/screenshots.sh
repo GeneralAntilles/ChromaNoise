@@ -67,11 +67,16 @@ shoot() {
     # the simulator shares.
     local zone
     zone=$(date +%z)
-    xcrun simctl status_bar "$udid" override \
-        --time "2024-01-09T09:41:00.000${zone:0:3}:${zone:3:2}" \
-        --dataNetwork wifi --wifiMode active --wifiBars 3 \
-        --cellularMode active --cellularBars 4 --operatorName "" \
-        --batteryState discharging --batteryLevel 100
+    # Twice: the first override after a boot shows the right date with
+    # a stale weekday ("Sun Jan 9"); the second corrects it.
+    for _ in 1 2; do
+        xcrun simctl status_bar "$udid" override \
+            --time "2024-01-09T09:41:00.000${zone:0:3}:${zone:3:2}" \
+            --dataNetwork wifi --wifiMode active --wifiBars 3 \
+            --cellularMode active --cellularBars 4 --operatorName "" \
+            --batteryState discharging --batteryLevel 100
+        sleep 2
+    done
 
     result="$WORK/$udid-$pass.xcresult"
     xcodebuild test-without-building -quiet \
@@ -175,4 +180,10 @@ sys.exit('no simulator named ' + name)" "$device")
     xcrun simctl shutdown "$udid" 2>/dev/null || true
 done
 
-echo "Screenshots are in $OUT/"
+# Captioned App Store frames of every set, in screenshots/framed/.
+echo "==> Framing"
+rm -rf "$OUT/framed"
+swift tools/frame_screenshots.swift "$OUT" "$OUT/framed"
+
+echo "Screenshots are in $OUT/, captioned in $OUT/framed/"
+echo "Upload: tools/asc.py upload-screenshots $OUT/framed"
