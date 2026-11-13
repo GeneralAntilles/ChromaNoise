@@ -47,6 +47,7 @@ uv run tools/reference_dsp.py
 tools/screenshots.sh                  # scenes: App/ScreenshotScenario.swift,
                                       # captions: tools/frame_screenshots.swift
 tools/asc.py upload-screenshots screenshots/framed   # replaces the listing's
+swift tools/make_header.swift screenshots/header.png  # product page header (iOS 27)
 
 # TestFlight upload (needs the App Store Connect API key in ~/.appstoreconnect/)
 tools/release.sh                      # archive, upload, wait for processing
