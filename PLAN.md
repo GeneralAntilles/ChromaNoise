@@ -25,6 +25,8 @@ done and tested), ChromaDoze preset import.
 
 ## Open
 
+- 1.1: a looping header video for the product page (5–30 s, muted,
+  3840×1646): painting the bars.
 - Marketing page at abelify.com/chromanoise (Ryan's portfolio site), then
   set it as the listing's marketing URL; the URL there now is a 404.
 - iPhone Duo inner-display screenshots: duoctl's hinge helper is killed at

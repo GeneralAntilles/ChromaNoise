@@ -81,7 +81,7 @@ ctx.drawRadialGradient(vignette, startCenter: center, startRadius: 0,
 // Tagline, centered in the safe area (CoreGraphics is y-up).
 let paragraph = NSMutableParagraphStyle()
 paragraph.alignment = .center
-let text = NSAttributedString(string: "Paint your own noise", attributes: [
+let text = NSAttributedString(string: "Customize your\nwhite noise", attributes: [
     .font: NSFont.systemFont(ofSize: 150, weight: .bold),
     .foregroundColor: NSColor.white,
     .paragraphStyle: paragraph,
