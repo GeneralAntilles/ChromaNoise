@@ -27,7 +27,6 @@ done and tested), ChromaDoze preset import.
 
 - Marketing page at abelify.com/chromanoise (Ryan's portfolio site), then
   set it as the listing's marketing URL; the URL there now is a 404.
-- App Store promotional text (optional, editable without review).
 - iPhone Duo inner-display screenshots: duoctl's hinge helper is killed at
   launch (exit 137) since Nov 13, so only the cover display is shot.
 

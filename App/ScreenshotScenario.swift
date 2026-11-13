@@ -12,9 +12,8 @@ enum ScreenshotScenario: String {
     case paint
     /// Cabin playing with a sleep timer counting down (dark).
     case sleep
-    /// Another saved sound in the landscape painter (light); the UI test
-    /// rotates the device.
-    case landscape
+    /// Another saved sound, with My Sounds filled out (light).
+    case favorites
 
     static let current: ScreenshotScenario? = {
         let args = ProcessInfo.processInfo.arguments
@@ -24,7 +23,7 @@ enum ScreenshotScenario: String {
 
     var colorScheme: ColorScheme {
         switch self {
-        case .paint, .landscape: .light
+        case .paint, .favorites: .light
         case .sleep: .dark
         }
     }
@@ -38,6 +37,8 @@ enum ScreenshotScenario: String {
         Phonon(name: "Deep Focus", amps: curve { t in
             0.55 + 0.3 * exp(-pow((t - 0.08) / 0.12, 2)) + 0.22 * exp(-pow((t - 0.62) / 0.14, 2)) - 0.35 * t
         }),
+        Phonon(name: "Night Drive", amps: curve { t in 0.92 - 0.75 * t }),
+        Phonon(name: "Study Hall", amps: curve { t in 0.7 - 0.2 * t }),
     ]
 
     static func seed(_ context: ModelContext) {
@@ -53,10 +54,11 @@ enum ScreenshotScenario: String {
     func apply(to model: PlayerModel) async {
         model.masterVolume = 0.65
         switch self {
-        case .paint, .landscape:
+        case .paint, .favorites:
             let saved = (try? StoredPhonon.container.mainContext.fetch(
                 FetchDescriptor<StoredPhonon>(sortBy: [SortDescriptor(\.createdAt)]))) ?? []
-            if let stored = self == .paint ? saved.first : saved.last, let phonon = stored.phonon {
+            let name = self == .paint ? "Evening Rain" : "Deep Focus"
+            if let stored = saved.first(where: { $0.name == name }), let phonon = stored.phonon {
                 model.load(phonon, as: .saved(id: stored.id))
             }
         case .sleep:

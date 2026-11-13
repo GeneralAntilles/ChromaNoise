@@ -14,14 +14,12 @@ final class ScreenshotTests: XCTestCase {
     func testScreenshots() {
         shoot("01-paint", scene: "paint")
         shoot("02-sleep", scene: "sleep")
-        shoot("03-landscape", scene: "landscape", orientation: .landscapeLeft)
+        shoot("03-favorites", scene: "favorites")
     }
 
     @MainActor
-    private func shoot(_ name: String, scene: String,
-                       orientation: UIDeviceOrientation = .portrait,
-                       prepare: (XCUIApplication) -> Void = { _ in }) {
-        XCUIDevice.shared.orientation = orientation
+    private func shoot(_ name: String, scene: String) {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
         app.launchArguments = ["-screenshot", scene]
         app.launch()
@@ -30,14 +28,6 @@ final class ScreenshotTests: XCTestCase {
         let playing = NSPredicate(format: "label CONTAINS 'Playing' OR label CONTAINS 'Stops at'")
         XCTAssertTrue(app.descendants(matching: .any).matching(playing).firstMatch
             .waitForExistence(timeout: 20), "\(scene): never started playing")
-        // Some displays don't rotate (iPhone Duo's folded outer screen);
-        // skip landscape there rather than save a duplicate portrait shot.
-        if orientation.isLandscape, app.frame.width < app.frame.height {
-            app.terminate()
-            XCUIDevice.shared.orientation = .portrait
-            return
-        }
-        prepare(app)
         sleep(2)   // let animations settle and the clocks tick past 0:00
 
         guard let png = Self.opaquePNG(screenshotOfScreen(showing: app)) else {
@@ -48,7 +38,6 @@ final class ScreenshotTests: XCTestCase {
         attachment.lifetime = .keepAlways
         add(attachment)
         app.terminate()
-        XCUIDevice.shared.orientation = .portrait
     }
 
     /// The capture as an upright PNG without an alpha channel. Landscape

@@ -67,15 +67,16 @@ shoot() {
     # the simulator shares.
     local zone
     zone=$(date +%z)
-    # Twice: the first override after a boot shows the right date with
-    # a stale weekday ("Sun Jan 9"); the second corrects it.
-    for _ in 1 2; do
+    # Twice, half a minute apart: soon after a boot the override shows
+    # the right date with a stale weekday ("Sun Jan 9"); applied again once
+    # the simulator has settled, it reads "Tue Jan 9".
+    for pause in 30 2; do
         xcrun simctl status_bar "$udid" override \
             --time "2024-01-09T09:41:00.000${zone:0:3}:${zone:3:2}" \
             --dataNetwork wifi --wifiMode active --wifiBars 3 \
             --cellularMode active --cellularBars 4 --operatorName "" \
             --batteryState discharging --batteryLevel 100
-        sleep 2
+        sleep "$pause"
     done
 
     result="$WORK/$udid-$pass.xcresult"

@@ -10,6 +10,7 @@ Credentials: ASC_KEY_ID and ASC_ISSUER_ID from the environment or
     tools/asc.py wait-build 42        # wait until build 42 is processed
     tools/asc.py listing              # store listing as entered in App Store Connect
     tools/asc.py keywords "a,b,c"     # set the editable version's keywords
+    tools/asc.py promo "..."          # ...and its promotional text (170 max)
     tools/asc.py upload-screenshots screenshots/framed
                                       # replace the editable version's screenshots
 """
@@ -182,15 +183,16 @@ def editable_localization() -> dict:
     sys.exit("The editable version has no en-US localization")
 
 
-def set_keywords(keywords: str) -> None:
-    if len(keywords) > 100:
-        sys.exit(f"Keywords are {len(keywords)} characters; the limit is 100")
+def set_version_text(field: str, value: str, limit: int) -> None:
+    """Sets one text field of the editable version's en-US listing."""
+    if len(value) > limit:
+        sys.exit(f"{field} is {len(value)} characters; the limit is {limit}")
     loc = editable_localization()
-    print(f"was: {loc['attributes']['keywords']}")
+    print(f"was: {loc['attributes'][field]}")
     request("PATCH", f"/appStoreVersionLocalizations/{loc['id']}", {"data": {
         "type": "appStoreVersionLocalizations", "id": loc["id"],
-        "attributes": {"keywords": keywords}}})
-    print(f"now: {keywords}")
+        "attributes": {field: value}}})
+    print(f"now: {value}")
 
 
 # screenshots/<device>/ folder -> App Store Connect display type. The Duo's
@@ -291,7 +293,9 @@ def main():
     elif command == "listing":
         listing()
     elif command == "keywords" and len(sys.argv) == 3:
-        set_keywords(sys.argv[2])
+        set_version_text("keywords", sys.argv[2], 100)
+    elif command == "promo" and len(sys.argv) == 3:
+        set_version_text("promotionalText", sys.argv[2], 170)
     elif command == "upload-screenshots" and len(sys.argv) == 3:
         upload_screenshots(sys.argv[2])
     elif command == "wait-build" and len(sys.argv) == 3:

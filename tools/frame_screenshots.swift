@@ -20,7 +20,7 @@ import UniformTypeIdentifiers
 let captions = [
     "paint": "Paint your\nown noise",
     "sleep": "Fall asleep with\na fade-out timer",
-    "landscape": "Shape every band,\nfrom rumble to hiss",
+    "favorites": "Save your\nfavorites",
 ]
 
 let arguments = CommandLine.arguments.dropFirst()
