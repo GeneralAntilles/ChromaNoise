@@ -31,7 +31,16 @@ fi
 
 OUT=screenshots
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+# Simulators this run booted, shut down again on the way out (also on an
+# error or Ctrl-C), each as soon as its shots are done.
+BOOTED=()
+cleanup() {
+    for udid in ${BOOTED[@]+"${BOOTED[@]}"}; do
+        xcrun simctl shutdown "$udid" 2>/dev/null || true
+    done
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 xcodegen --quiet
 
@@ -138,19 +147,32 @@ sys.exit('no simulator named ' + name)" "$device")
         plutil -replace AppleICUForce24HourTime -bool NO "$prefs"
     fi
     xcrun simctl boot "$udid" 2>/dev/null || true
+    BOOTED+=("$udid")
     xcrun simctl bootstatus "$udid" -b >/dev/null
     if [[ "$device" == *Duo* ]] && command -v duoctl >/dev/null; then
+        # "Booted" comes before the displays: wait until one is active.
+        # A SpringBoard crash loop (seen on the Duo) never gets there.
+        for _ in $(seq 60); do
+            duoctl -d "$udid" state 2>/dev/null | grep -q '"activeScreen": "' && break
+            sleep 2
+        done
         # Both displays: folded (cover), then unfolded (inner). Ends folded,
-        # as the simulator boots.
-        duoctl -d "$udid" close >/dev/null
-        shoot "$device" "$udid" cover
-        echo "==> $device (inner)"
-        duoctl -d "$udid" open >/dev/null
-        shoot "$device" "$udid" inner
-        duoctl -d "$udid" close >/dev/null
+        # as the simulator boots. If the hinge won't move, shoot whichever
+        # display is active.
+        if duoctl -d "$udid" close >/dev/null 2>&1; then
+            shoot "$device" "$udid" cover
+            echo "==> $device (inner)"
+            duoctl -d "$udid" open >/dev/null
+            shoot "$device" "$udid" inner
+            duoctl -d "$udid" close >/dev/null
+        else
+            echo "    duoctl can't move the hinge; shooting the active display only" >&2
+            shoot "$device" "$udid" main
+        fi
     else
         shoot "$device" "$udid" main
     fi
+    xcrun simctl shutdown "$udid" 2>/dev/null || true
 done
 
 echo "Screenshots are in $OUT/"

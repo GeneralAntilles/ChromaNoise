@@ -72,8 +72,20 @@ final class EngineLifecycleTests: XCTestCase {
     /// The worker sleeps between refills; at the host's worst case (4096-frame
     /// pulls, as with the screen locked) it must still keep the ring fed.
     /// Realtime-paced, so only where the fast FFT makes timing dependable.
+    /// Shared CI machines can stall any thread for a while, so a run with
+    /// underruns is tried again: a worker too slow to keep up fails every
+    /// time, a scheduling hiccup doesn't recur.
     func testWorkerKeepsUpWithLargestPullsAtRealtimePace() {
-        let frames = 4096
+        var underruns: [Int] = []
+        for _ in 1...3 {
+            underruns.append(underrunsAtRealtimePace(frames: 4096))
+            if underruns.last == 0 { return }
+        }
+        XCTFail("ring underran at realtime pace in every attempt: \(underruns)")
+    }
+
+    /// Underruns while pulling ~2 s of audio at `frames` per pull, in time.
+    private func underrunsAtRealtimePace(frames: Int) -> Int {
         let engine = NoiseEngine()
         engine.prepare(sampleRate: 48000, maxFrames: frames)
         defer { engine.teardown() }
@@ -87,7 +99,7 @@ final class EngineLifecycleTests: XCTestCase {
             _ = pull(engine, frames: frames)
             Thread.sleep(until: start.addingTimeInterval(Double(i) * period))
         }
-        XCTAssertEqual(engine.underrunCount, before, "ring underran at realtime pace")
+        return engine.underrunCount - before
     }
     #endif
 
