@@ -11,6 +11,7 @@ Credentials: ASC_KEY_ID and ASC_ISSUER_ID from the environment or
     tools/asc.py listing              # store listing as entered in App Store Connect
     tools/asc.py keywords "a,b,c"     # set the editable version's keywords
     tools/asc.py promo "..."          # ...and its promotional text (170 max)
+    tools/asc.py select-build 60      # ...and the build it submits
     tools/asc.py upload-screenshots screenshots/framed
                                       # replace the editable version's screenshots
 """
@@ -170,14 +171,30 @@ def listing() -> None:
             print("== Review details: none")
 
 
-def editable_localization() -> dict:
-    """The en-US text of the version still being prepared (the one whose
-    listing can change)."""
+def editable_version() -> dict:
+    """The App Store version still being prepared."""
     versions = get(f"/apps/{app_id()}/appStoreVersions",
                    **{"filter[appStoreState]": "PREPARE_FOR_SUBMISSION,DEVELOPER_REJECTED,REJECTED"})["data"]
     if not versions:
         sys.exit("No version is open for editing")
-    for loc in get(f"/appStoreVersions/{versions[0]['id']}/appStoreVersionLocalizations")["data"]:
+    return versions[0]
+
+
+def select_build(number: str) -> None:
+    rows = builds(number)
+    if not rows or rows[0]["attributes"]["processingState"] != "VALID":
+        sys.exit(f"Build {number} isn't processed (tools/asc.py wait-build {number})")
+    version = editable_version()
+    request("PATCH", f"/appStoreVersions/{version['id']}/relationships/build",
+            {"data": {"type": "builds", "id": rows[0]["id"]}})
+    print(f"Version {version['attributes']['versionString']} now submits build {number}")
+
+
+def editable_localization() -> dict:
+    """The en-US text of the version still being prepared (the one whose
+    listing can change)."""
+    version = editable_version()
+    for loc in get(f"/appStoreVersions/{version['id']}/appStoreVersionLocalizations")["data"]:
         if loc["attributes"]["locale"] == "en-US":
             return loc
     sys.exit("The editable version has no en-US localization")
@@ -294,6 +311,8 @@ def main():
         listing()
     elif command == "keywords" and len(sys.argv) == 3:
         set_version_text("keywords", sys.argv[2], 100)
+    elif command == "select-build" and len(sys.argv) == 3:
+        select_build(sys.argv[2])
     elif command == "promo" and len(sys.argv) == 3:
         set_version_text("promotionalText", sys.argv[2], 170)
     elif command == "upload-screenshots" and len(sys.argv) == 3:
